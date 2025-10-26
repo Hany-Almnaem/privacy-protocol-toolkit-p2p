@@ -1,8 +1,8 @@
 # Complete Documentation
 
-> **Current Status**: Proof of Concept - Demonstration Mode
+> **Current Status**: Proof of Concept - Real Network Integration ✅
 > 
-> This tool demonstrates privacy analysis concepts using simulated network data. All algorithms, ZK proof concepts, and API designs are functional. For technical details on real network integration, see [KNOWN_ISSUES.md](KNOWN_ISSUES.md) and [PY_LIBP2P_STATUS.md](PY_LIBP2P_STATUS.md).
+> This tool performs privacy analysis on **real py-libp2p network connections**. All privacy detection algorithms, event capture, and reporting features are functional. ZK proofs are mock implementations for demonstration purposes. See [Phase 2 Roadmap](#production-roadmap) for real ZK integration plans.
 
 ## Table of Contents
 
@@ -24,26 +24,31 @@
 
 - Python 3.9 or higher
 - Virtual environment (recommended)
+- py-libp2p 0.3.0 or later (latest from GitHub recommended)
 
 ### Setup
 
 ```bash
-# Clone the repository (once available)
+# Clone the repository
 git clone <repository-url>
 cd libp2p_privacy_poc
 
-# Create virtual environment (optional but recommended)
+# Create virtual environment (recommended)
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install latest py-libp2p from GitHub (recommended)
+pip install git+https://github.com/libp2p/py-libp2p.git@main
 
 # Install in development mode
 pip install -e .
 ```
 
 This installs:
-- All required dependencies
+- All required dependencies including py-libp2p
 - The `libp2p-privacy` CLI command
 - The Python package for import
+- Real network integration capabilities
 
 ### Verify Installation
 
@@ -65,9 +70,7 @@ libp2p-privacy demo
 libp2p-privacy analyze
 ```
 
-This runs privacy analysis on simulated network data and displays results in your terminal.
-
-**Note**: The tool currently operates in demonstration mode with simulated data. See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for details on real network integration.
+This runs privacy analysis with real network monitoring and displays results in your terminal.
 
 ### 2. Generate HTML Report
 
@@ -88,25 +91,32 @@ Adds mock zero-knowledge proofs to demonstrate privacy concepts (not cryptograph
 ### 4. Use in Python Code
 
 ```python
+import trio
 from libp2p import new_host
+from libp2p.tools.async_service import background_trio_service
 from libp2p_privacy_poc import MetadataCollector, PrivacyAnalyzer
 
-# Create your libp2p host
-host = new_host()
+async def main():
+    # Create your libp2p host
+    host = new_host()
+    
+    # Attach privacy collector (automatically captures events)
+    collector = MetadataCollector(host)
+    
+    # Start network with proper lifecycle management
+    async with background_trio_service(host.get_network()):
+        # Your application runs here...
+        # Collector automatically captures real network events
+        
+        # Analyze privacy
+        analyzer = PrivacyAnalyzer(collector)
+        report = analyzer.analyze()
+        
+        # Display results
+        print(report.summary())
+        print(f"Risk Score: {report.overall_risk_score:.2f}")
 
-# Attach privacy collector
-collector = MetadataCollector(host)
-
-# Your application runs here...
-# Collector automatically captures events
-
-# Analyze privacy
-analyzer = PrivacyAnalyzer(collector)
-report = analyzer.analyze()
-
-# Display results
-print(report.summary())
-print(f"Risk Score: {report.overall_risk_score:.2f}")
+trio.run(main)
 ```
 
 ---
@@ -128,7 +138,7 @@ print(f"Risk Score: {report.overall_risk_score:.2f}")
 libp2p-privacy analyze [OPTIONS]
 ```
 
-**Note**: Currently operates with simulated network data for demonstration.
+Analyzes privacy leaks in real py-libp2p network connections.
 
 **Options:**
 
@@ -200,7 +210,7 @@ Displays version number and proof-of-concept disclaimer.
 
 ## Python Integration
 
-**Current Mode**: Demonstration with simulated events. The tool integrates with py-libp2p's event interface but uses simulated network data for testing.
+**Current Mode**: Real network integration. The tool captures live events from py-libp2p connections via the INotifee interface.
 
 ### Basic Integration
 
@@ -212,17 +222,29 @@ from libp2p_privacy_poc.privacy_analyzer import PrivacyAnalyzer
 from libp2p_privacy_poc.report_generator import ReportGenerator
 ```
 
-#### Step 2: Create Collector
+#### Step 2: Create Collector and Start Network
 
 ```python
-# Option 1: Auto-attach to existing host (API ready for future integration)
+import trio
 from libp2p import new_host
+from libp2p.tools.async_service import background_trio_service
 
-host = new_host()
-collector = MetadataCollector(host)
-# Notifee interface registered, ready for real events
+async def setup():
+    # Create host
+    host = new_host()
+    
+    # Attach collector (automatically registers INotifee)
+    collector = MetadataCollector(host)
+    
+    # Start network with proper lifecycle management
+    async with background_trio_service(host.get_network()):
+        # Network is now active, events will be captured
+        # Your application code here...
+        pass
+    
+    return collector
 
-# Option 2: Manual event reporting (current demonstration mode)
+# For manual event reporting (testing/simulation):
 collector = MetadataCollector(libp2p_host=None)
 collector.on_connection_opened(peer_id, multiaddr, "outbound")
 ```
@@ -682,15 +704,18 @@ proof = zk_system.generate_range_proof(
 
 ### Current Status: Phase 1 Complete ✅
 
-- ✅ Core privacy analysis (6 algorithms)
-- ✅ Mock ZK proof system
+- ✅ Core privacy analysis (6 detection algorithms)
+- ✅ Real py-libp2p network integration via INotifee
+- ✅ Event capture from live connections
+- ✅ Mock ZK proof system (demonstration)
 - ✅ CLI tool with 3 commands
-- ✅ Multi-format reports
-- ✅ Python integration API
-- ✅ Full documentation
+- ✅ Multi-format reports (console/JSON/HTML)
+- ✅ Python integration API with background_trio_service
+- ✅ Comprehensive documentation
 
+**Achievement**: Successfully integrated with py-libp2p using the `background_trio_service()` pattern for proper network lifecycle management.
 
-### Phase 2: Real ZK Integration 
+### Phase 2: Real ZK Integration (4-6 weeks) 
 
 **Goals**:
 - Replace mock ZK with real cryptographic proofs
@@ -854,14 +879,16 @@ zk_proofs = {"anonymity_set": [proof1, proof2]}
 ## Statistics
 
 - **Total Code**: ~3,000 lines
-- **Core Modules**: 7
-- **CLI Commands**: 3
-- **Report Formats**: 3
-- **Privacy Detection Algorithms**: 6
-- **ZK Proof Types**: 4
-- **Examples**: 3 complete examples
-- **Completion**: ~80%
+- **Core Modules**: 7 (all functional)
+- **CLI Commands**: 3 (analyze, demo, version)
+- **Report Formats**: 3 (console/JSON/HTML)
+- **Privacy Detection Algorithms**: 6 working methods
+- **ZK Proof Types**: 4 (mock implementation)
+- **Examples**: 3 complete examples + integration tests
+- **Real Network Integration**: ✅ Working
+- **Phase 1 Completion**: 100%
 
 --- 
 **Version**: 0.1.0 (Proof of Concept)  
+**Last Updated**: October 26, 2025  
 

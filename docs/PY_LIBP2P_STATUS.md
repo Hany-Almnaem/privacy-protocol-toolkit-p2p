@@ -1,12 +1,23 @@
 # py-libp2p Swarm Implementation Status & Alternatives
 
-## Investigation Summary
+## ✅ RESOLUTION (October 26, 2025)
 
-### Current State of py-libp2p Swarm
+**Status**: Issue RESOLVED - Real network connections working
+
+The Swarm implementation issue has been successfully resolved. The problem was not with py-libp2p itself, but with incorrect usage of the network lifecycle management pattern.
+
+**Solution**: Use `background_trio_service()` from `libp2p.tools.async_service` to properly initialize the network service manager.
+
+See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for complete resolution details.
+
+---
+
+## Original Investigation Summary
+
+### Original State of py-libp2p Swarm (Investigation dated October 17, 2025)
 
 **Version**: 0.3.0  
-**Date**: October 17, 2025  
-**Status**: ⚠️ **Partially Implemented**
+**Original Status**: ⚠️ **Appeared Partially Implemented** (Later confirmed to be usage error)
 
 #### What Works ✅
 - Swarm class exists and is instantiated
@@ -88,11 +99,60 @@ await network.run()
 - Live network traffic privacy leaks
 - Actual metadata collection from libp2p
 
-### Why Simulated Data Is Sufficient for PoC
+### Why Simulated Data Was Considered (No Longer Needed)
 
 1. **Algorithms are network-agnostic**: Privacy analysis logic doesn't depend on connection source
 2. **API integration is proven**: `INotifee` interface is correctly implemented
-3. **Concept validation**: Shows what the tool WOULD do with real data
+3. **Concept validation**: Shows what the tool would do with real data
 4. **Safer for demo**: No network dependencies = more reliable demos
+
+**Note**: This workaround is no longer necessary as real network integration is now working.
+
+---
+
+## Current Working Status (October 26, 2025)
+
+### What Now Works ✅
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Host Creation | ✅ Works | `new_host()` with listen_addrs |
+| Listener Start | ✅ Works | Via `background_trio_service()` |
+| Connection Dial | ✅ Works | Real TCP connections established |
+| Event Hooks | ✅ Works | INotifee interface captures events |
+| Service Manager | ✅ Works | Properly initialized via TrioManager |
+| Privacy Analysis | ✅ Works | Real network data analysis |
+
+### Implementation
+
+**Correct Usage Pattern**:
+```python
+from libp2p import new_host
+from libp2p.tools.async_service import background_trio_service
+import trio
+
+async def main():
+    host = new_host()
+    async with background_trio_service(host.get_network()):
+        # Network is active, listeners running
+        # Events are captured
+        pass
+
+trio.run(main)
+```
+
+**Key Insight**: py-libp2p's Swarm is fully implemented and working. The issue was incorrect usage of the network lifecycle API.
+
+### Verified Functionality
+
+- ✅ Real node-to-node connections
+- ✅ Network listeners start and accept connections  
+- ✅ Event capture via INotifee
+- ✅ MetadataCollector captures real events
+- ✅ Privacy analysis on live network data
+- ✅ All report formats working
+- ✅ CLI integration working
+
+**Test Evidence**: See `test_real_connection.py` with exit code 0 and successful event capture.
 
 ---

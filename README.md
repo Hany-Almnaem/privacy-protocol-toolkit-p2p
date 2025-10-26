@@ -2,7 +2,7 @@
 
 > ⚠️ **PROOF OF CONCEPT** - Mock ZK proofs for demonstration only
 
-A privacy analysis tool for py-libp2p that detects privacy leaks and demonstrates zero-knowledge proof concepts.
+A privacy analysis tool for py-libp2p that detects privacy leaks in real network connections and demonstrates zero-knowledge proof concepts.
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 
@@ -21,7 +21,7 @@ pip install -e .
 ### Run Analysis
 
 ```bash
-# Console analysis (uses simulated data for demonstration)
+# Console analysis with real network monitoring
 libp2p-privacy analyze
 
 # HTML report with ZK proofs
@@ -34,17 +34,28 @@ libp2p-privacy demo
 ### Use in Python
 
 ```python
+from libp2p import new_host
+from libp2p.tools.async_service import background_trio_service
 from libp2p_privacy_poc import MetadataCollector, PrivacyAnalyzer
+import trio
 
-# Attach to your libp2p host
-collector = MetadataCollector(your_host)
+async def analyze_privacy():
+    # Create libp2p host
+    host = new_host()
+    
+    # Attach privacy collector (automatically captures events)
+    collector = MetadataCollector(host)
+    
+    # Start network with proper lifecycle management
+    async with background_trio_service(host.get_network()):
+        # Your application runs here...
+        # Collector automatically captures real network events
+        
+        # Analyze privacy
+        report = PrivacyAnalyzer(collector).analyze()
+        print(report.summary())
 
-# Or use with simulated events for testing
-collector.on_connection_opened(peer_id, multiaddr, "outbound")
-
-# Analyze privacy
-report = PrivacyAnalyzer(collector).analyze()
-print(report.summary())
+trio.run(analyze_privacy)
 ```
 
 ## What It Does
@@ -135,44 +146,56 @@ Recommendations:
 ## Requirements
 
 - Python 3.9+
-- py-libp2p 0.2.0+
+- py-libp2p 0.3.0+ (install from GitHub main branch recommended)
 - See `requirements.txt` for all dependencies
+
+### Installation Note
+
+For best results, install the latest py-libp2p from GitHub:
+
+```bash
+pip install git+https://github.com/libp2p/py-libp2p.git@main
+```
 
 ## Important Disclaimers
 
 ⚠️ **This is a Proof of Concept**
 
-- **Demonstration Mode**: Uses simulated network data for testing
-- **Mock ZK Proofs**: No cryptographic guarantees  
-- **No Security Audit**: Not audited
-- **Basic Algorithms**: Heuristic-based detection
-- **Not Production Ready**: Requires real ZK implementation
-
-**Note**: Currently demonstrates privacy analysis concepts with simulated data. See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for technical details.
+- **Real Network Integration**: ✅ Works with live py-libp2p connections
+- **Mock ZK Proofs**: ⚠️ No cryptographic guarantees (demonstration only)
+- **No Security Audit**: Not audited for production use
+- **Heuristic Detection**: Privacy analysis uses pattern-based algorithms
+- **Not Production Ready**: Requires real ZK implementation and security audit
 
 **DO NOT use in production without:**
-- Real network connection integration
 - Real ZK implementation (PySnark2/Groth16)
-- Security audit
-- Performance optimization
-- Comprehensive testing
+- Professional security audit
+- Performance optimization and testing
+- Comprehensive threat modeling
+- Privacy guarantees validation
 
 ## Roadmap
 
 **Phase 1: PoC** ✅ Complete
-- Privacy analysis algorithms
-- Mock ZK proof system
-- CLI and reporting
+- ✅ Privacy analysis algorithms (6 detection methods)
+- ✅ Real py-libp2p network integration
+- ✅ Event capture via INotifee interface
+- ✅ Mock ZK proof system
+- ✅ CLI and reporting (console/JSON/HTML)
+- ✅ Comprehensive documentation
 
-**Phase 2: Real ZK** 
-- PySnark2 integration
-- Groth16 proofs
-- Cryptographic verification
-
-**Phase 3: Production** 
-- Security audit
+**Phase 2: Real ZK Integration** (4-6 weeks)
+- PySnark2 circuit implementation
+- Groth16 proof generation and verification
+- Trusted setup ceremony
 - Performance optimization
-- Production deployment
+
+**Phase 3: Production Hardening** (4-6 weeks)
+- Professional security audit
+- Performance testing at scale
+- Memory and CPU optimization
+- Production deployment guide
+- Integration with py-libp2p core (optional)
 
 ## Contributing
 Areas for contribution:
@@ -184,11 +207,13 @@ Areas for contribution:
 ## Statistics
 
 - **Code**: ~3,000 lines
-- **Documentation**: 4 files
-- **Privacy Detection Algorithms**: 6
-- **ZK Proof Types**: 4
-- **Report Formats**: 3
-- **Completion**: ~80%
+- **Documentation**: 5 comprehensive files
+- **Privacy Detection Algorithms**: 6 working methods
+- **ZK Proof Types**: 4 (mock implementation)
+- **Report Formats**: 3 (console/JSON/HTML)
+- **Real Network Integration**: ✅ Working
+- **Test Coverage**: Integration and unit tests
+- **Phase 1 Completion**: 100%
 
 ## License
 
