@@ -19,6 +19,11 @@ from libp2p_privacy_poc.privacy_analyzer import PrivacyAnalyzer
 from libp2p_privacy_poc.mock_zk_proofs import MockZKProofSystem
 from libp2p_privacy_poc.report_generator import ReportGenerator
 
+# Timeout constants for network operations (in seconds)
+LISTEN_TIMEOUT = 10  # Time to bind listener
+CONNECT_TIMEOUT = 10  # Time to establish connection
+CLOSE_TIMEOUT = 5    # Time to cleanup/close hosts
+
 
 async def main():
     """Run the basic privacy analysis example with real connections."""
@@ -52,10 +57,11 @@ async def main():
         async with background_trio_service(network2):
             print("   ✓ Networks started")
             
-            # Start listeners
+            # Start listeners (with timeout protection)
             print("\n4. Starting listeners...")
-            await network1.listen(listen_addr1)
-            await network2.listen(listen_addr2)
+            with trio.fail_after(LISTEN_TIMEOUT):
+                await network1.listen(listen_addr1)
+                await network2.listen(listen_addr2)
             
             # Wait for listeners to be ready
             await trio.sleep(0.5)
@@ -67,10 +73,11 @@ async def main():
             full_addr = actual_addr.encapsulate(Multiaddr(f"/p2p/{host2.get_id()}"))
             print(f"   ✓ Host2 listening on: {actual_addr}")
             
-            # Establish connection from host1 to host2
+            # Establish connection from host1 to host2 (with timeout protection)
             print("\n5. Establishing real connection...")
             peer_info = info_from_p2p_addr(full_addr)
-            await host1.connect(peer_info)
+            with trio.fail_after(CONNECT_TIMEOUT):
+                await host1.connect(peer_info)
             print("   ✓ Connection established!")
             
             # Wait for events to be captured
@@ -177,10 +184,11 @@ async def main():
             print("   - Privacy analysis performed on real network metadata")
             print("   - Ready for production integration!\n")
             
-            # Cleanup
+            # Cleanup (with timeout protection)
             print("11. Cleaning up...")
-            await host1.close()
-            await host2.close()
+            with trio.fail_after(CLOSE_TIMEOUT):
+                await host1.close()
+                await host2.close()
             print("    ✓ Hosts closed")
 
 

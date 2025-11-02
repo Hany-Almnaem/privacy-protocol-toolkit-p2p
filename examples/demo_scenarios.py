@@ -21,6 +21,11 @@ from libp2p_privacy_poc.privacy_analyzer import PrivacyAnalyzer
 from libp2p_privacy_poc.report_generator import ReportGenerator
 from libp2p_privacy_poc.mock_zk_proofs import MockZKProofSystem, ZKProofType
 
+# Timeout constants for network operations (in seconds)
+LISTEN_TIMEOUT = 10  # Time to bind listener
+CONNECT_TIMEOUT = 10  # Time to establish connection
+CLOSE_TIMEOUT = 5    # Time to cleanup/close hosts
+
 
 def print_header(title: str):
     """Print a formatted header."""
@@ -70,10 +75,11 @@ async def scenario_1_timing_correlation():
         async with peer_services[0]:
             async with peer_services[1]:
                 async with peer_services[2]:
-                    # Start listeners
-                    await hub_host.get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
-                    for peer in peer_hosts:
-                        await peer.get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
+                    # Start listeners (with timeout protection)
+                    with trio.fail_after(LISTEN_TIMEOUT):
+                        await hub_host.get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
+                        for peer in peer_hosts:
+                            await peer.get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
                     
                     await trio.sleep(0.5)
                     print("   ✓ Networks ready")
@@ -87,8 +93,9 @@ async def scenario_1_timing_correlation():
                         actual_addr = listener.get_addrs()[0]
                         full_addr = actual_addr.encapsulate(Multiaddr(f"/p2p/{peer.get_id()}"))
                         
-                        # Connect with very short delay - THIS IS THE LEAK!
-                        await hub_host.connect(info_from_p2p_addr(full_addr))
+                        # Connect with very short delay - THIS IS THE LEAK! (with timeout protection)
+                        with trio.fail_after(CONNECT_TIMEOUT):
+                            await hub_host.connect(info_from_p2p_addr(full_addr))
                         await trio.sleep(0.05)  # 50ms interval = timing correlation!
                     
                     # Wait for events to be captured
@@ -129,11 +136,12 @@ async def scenario_1_timing_correlation():
                     print(f"\n   With ZK proofs, you could prove that events are timing-independent")
                     print(f"   without revealing the actual timing values!")
                     
-                    # Cleanup
+                    # Cleanup (with timeout protection)
                     print("\n   Cleaning up...")
-                    await hub_host.close()
-                    for peer in peer_hosts:
-                        await peer.close()
+                    with trio.fail_after(CLOSE_TIMEOUT):
+                        await hub_host.close()
+                        for peer in peer_hosts:
+                            await peer.close()
     
     print("\n✅ Scenario 1 Complete (Real Network)")
 
@@ -169,10 +177,11 @@ async def scenario_2_anonymity_set():
     async with background_trio_service(main_host.get_network()):
         async with background_trio_service(peer_hosts[0].get_network()):
             async with background_trio_service(peer_hosts[1].get_network()):
-                # Start listeners
-                await main_host.get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
-                await peer_hosts[0].get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
-                await peer_hosts[1].get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
+                # Start listeners (with timeout protection)
+                with trio.fail_after(LISTEN_TIMEOUT):
+                    await main_host.get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
+                    await peer_hosts[0].get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
+                    await peer_hosts[1].get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
                 
                 await trio.sleep(0.5)
                 print("   ✓ Networks ready")
@@ -185,7 +194,8 @@ async def scenario_2_anonymity_set():
                     actual_addr = listener.get_addrs()[0]
                     full_addr = actual_addr.encapsulate(Multiaddr(f"/p2p/{peer.get_id()}"))
                     
-                    await main_host.connect(info_from_p2p_addr(full_addr))
+                    with trio.fail_after(CONNECT_TIMEOUT):
+                        await main_host.connect(info_from_p2p_addr(full_addr))
                     await trio.sleep(0.1)
                 
                 # Wait for events
@@ -227,11 +237,12 @@ async def scenario_2_anonymity_set():
                 print(f"   without revealing which one!")
                 print(f"   (But N={stats['unique_peers']} is still too small for good privacy!)")
                 
-                # Cleanup
+                # Cleanup (with timeout protection)
                 print("\n   Cleaning up...")
-                await main_host.close()
-                for peer in peer_hosts:
-                    await peer.close()
+                with trio.fail_after(CLOSE_TIMEOUT):
+                    await main_host.close()
+                    for peer in peer_hosts:
+                        await peer.close()
     
     print("\n✅ Scenario 2 Complete (Real Network)")
 
@@ -265,10 +276,11 @@ async def scenario_3_protocol_fingerprinting():
     async with background_trio_service(main_host.get_network()):
         async with background_trio_service(peer_hosts[0].get_network()):
             async with background_trio_service(peer_hosts[1].get_network()):
-                # Start listeners
-                await main_host.get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
-                for peer in peer_hosts:
-                    await peer.get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
+                # Start listeners (with timeout protection)
+                with trio.fail_after(LISTEN_TIMEOUT):
+                    await main_host.get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
+                    for peer in peer_hosts:
+                        await peer.get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
                 
                 await trio.sleep(0.5)
                 print("   ✓ Networks ready")
@@ -281,7 +293,8 @@ async def scenario_3_protocol_fingerprinting():
                     actual_addr = listener.get_addrs()[0]
                     full_addr = actual_addr.encapsulate(Multiaddr(f"/p2p/{peer.get_id()}"))
                     
-                    await main_host.connect(info_from_p2p_addr(full_addr))
+                    with trio.fail_after(CONNECT_TIMEOUT):
+                        await main_host.connect(info_from_p2p_addr(full_addr))
                     await trio.sleep(0.1)
                 
                 # Wait for events
@@ -310,11 +323,12 @@ async def scenario_3_protocol_fingerprinting():
                 print("\n   💡 Insight: Protocol patterns can fingerprint nodes!")
                 print("   In production, unusual protocol combinations can make nodes identifiable.")
                 
-                # Cleanup
+                # Cleanup (with timeout protection)
                 print("\n   Cleaning up...")
-                await main_host.close()
-                for peer in peer_hosts:
-                    await peer.close()
+                with trio.fail_after(CLOSE_TIMEOUT):
+                    await main_host.close()
+                    for peer in peer_hosts:
+                        await peer.close()
     
     print("\n✅ Scenario 3 Complete (Real Network)")
 
@@ -417,8 +431,9 @@ async def scenario_4_zk_proof_showcase():
     print("\n   💡 Note: These are MOCK proofs for demonstration.")
     print("      Real ZK proofs would use Groth16, PLONK, or similar schemes.")
     
-    # Cleanup
-    await host.close()
+    # Cleanup (with timeout protection)
+    with trio.fail_after(CLOSE_TIMEOUT):
+        await host.close()
     
     print("\n✅ Scenario 4 Complete")
 
@@ -456,10 +471,11 @@ async def scenario_5_comprehensive_report():
         async with peer_services[0]:
             async with peer_services[1]:
                 async with peer_services[2]:
-                    # Start listeners
-                    await main_host.get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
-                    for peer in peer_hosts:
-                        await peer.get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
+                    # Start listeners (with timeout protection)
+                    with trio.fail_after(LISTEN_TIMEOUT):
+                        await main_host.get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
+                        for peer in peer_hosts:
+                            await peer.get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
                     
                     await trio.sleep(0.5)
                     print("   ✓ Networks ready")
@@ -472,7 +488,8 @@ async def scenario_5_comprehensive_report():
                         actual_addr = listener.get_addrs()[0]
                         full_addr = actual_addr.encapsulate(Multiaddr(f"/p2p/{peer.get_id()}"))
                         
-                        await main_host.connect(info_from_p2p_addr(full_addr))
+                        with trio.fail_after(CONNECT_TIMEOUT):
+                            await main_host.connect(info_from_p2p_addr(full_addr))
                         await trio.sleep(0.03)  # Rapid timing - privacy leak!
                     
                     # Wait for events
@@ -523,11 +540,12 @@ async def scenario_5_comprehensive_report():
                     
                     print(console_report)
                     
-                    # Cleanup
+                    # Cleanup (with timeout protection)
                     print("\n   Cleaning up...")
-                    await main_host.close()
-                    for peer in peer_hosts:
-                        await peer.close()
+                    with trio.fail_after(CLOSE_TIMEOUT):
+                        await main_host.close()
+                        for peer in peer_hosts:
+                            await peer.close()
     
     print("\n✅ Scenario 5 Complete (Real Network)")
 

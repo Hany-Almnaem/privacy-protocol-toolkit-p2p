@@ -16,6 +16,11 @@ from libp2p_privacy_poc.privacy_analyzer import PrivacyAnalyzer
 from libp2p_privacy_poc.report_generator import ReportGenerator
 from libp2p_privacy_poc.mock_zk_proofs import MockZKProofSystem
 
+# Timeout constants for network operations (in seconds)
+LISTEN_TIMEOUT = 10  # Time to bind listener
+CONNECT_TIMEOUT = 10  # Time to establish connection
+CLOSE_TIMEOUT = 5    # Time to cleanup/close hosts
+
 
 class NetworkNode:
     """Represents a node in the network with real connection support."""
@@ -28,13 +33,15 @@ class NetworkNode:
         self.network = host.get_network()
     
     async def start(self, listen_addr: Multiaddr):
-        """Start the network and listener."""
-        await self.network.listen(listen_addr)
+        """Start the network and listener (with timeout protection)."""
+        with trio.fail_after(LISTEN_TIMEOUT):
+            await self.network.listen(listen_addr)
     
     async def connect_to(self, peer_multiaddr: Multiaddr):
-        """Connect to another peer."""
+        """Connect to another peer (with timeout protection)."""
         peer_info = info_from_p2p_addr(peer_multiaddr)
-        await self.host.connect(peer_info)
+        with trio.fail_after(CONNECT_TIMEOUT):
+            await self.host.connect(peer_info)
     
     def analyze(self) -> tuple:
         """Run privacy analysis."""
@@ -276,10 +283,11 @@ async def main():
                 print("- Comparative privacy analysis across nodes")
                 print("- Ready for production multi-node scenarios!")
                 
-                # Cleanup
+                # Cleanup (with timeout protection)
                 print("\n8. Cleaning up...")
-                for node in nodes:
-                    await node.host.close()
+                with trio.fail_after(CLOSE_TIMEOUT):
+                    for node in nodes:
+                        await node.host.close()
                 print("   ✓ All hosts closed")
 
 
