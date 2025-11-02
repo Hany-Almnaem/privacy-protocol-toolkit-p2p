@@ -18,6 +18,7 @@ from libp2p_privacy_poc.metadata_collector import MetadataCollector
 from libp2p_privacy_poc.privacy_analyzer import PrivacyAnalyzer
 from libp2p_privacy_poc.mock_zk_proofs import MockZKProofSystem
 from libp2p_privacy_poc.report_generator import ReportGenerator
+from libp2p_privacy_poc.utils import get_peer_listening_address
 
 # Timeout constants for network operations (in seconds)
 LISTEN_TIMEOUT = 10  # Time to bind listener
@@ -66,12 +67,9 @@ async def main():
             # Wait for listeners to be ready
             await trio.sleep(0.5)
             
-            # Get actual listening address
-            listener_key = list(network2.listeners.keys())[0]
-            listener = network2.listeners[listener_key]
-            actual_addr = listener.get_addrs()[0]
-            full_addr = actual_addr.encapsulate(Multiaddr(f"/p2p/{host2.get_id()}"))
-            print(f"   ✓ Host2 listening on: {actual_addr}")
+            # Get actual listening address using utility function
+            full_addr = get_peer_listening_address(host2)
+            print(f"   ✓ Host2 listening on: {full_addr}")
             
             # Establish connection from host1 to host2 (with timeout protection)
             print("\n5. Establishing real connection...")

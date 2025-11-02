@@ -16,6 +16,7 @@ from libp2p_privacy_poc.metadata_collector import MetadataCollector
 from libp2p_privacy_poc.privacy_analyzer import PrivacyAnalyzer
 from libp2p_privacy_poc.report_generator import ReportGenerator
 from libp2p_privacy_poc.mock_zk_proofs import MockZKProofSystem
+from libp2p_privacy_poc.utils import get_peer_listening_address
 
 # Timeout constants for network operations (in seconds)
 LISTEN_TIMEOUT = 10  # Time to bind listener
@@ -119,11 +120,8 @@ async def main():
         
         # Connect hub to each spoke
         for i, spoke in enumerate(spokes):
-            # Get spoke's listening address
-            listener_key = list(spoke.network.listeners.keys())[0]
-            listener = spoke.network.listeners[listener_key]
-            actual_addr = listener.get_addrs()[0]
-            full_addr = actual_addr.encapsulate(Multiaddr(f"/p2p/{spoke.peer_id}"))
+            # Get spoke's listening address using utility function
+            full_addr = get_peer_listening_address(spoke.host)
             
             print(f"   Connecting Node-1 to {spoke.name}...")
             await hub.connect_to(full_addr)
@@ -148,10 +146,7 @@ async def main():
         print("   Hub making rapid reconnections (timing leak!)...")
         
         # Have hub connect to spoke 2 again (reconnection)
-        listener_key = list(spokes[0].network.listeners.keys())[0]
-        listener = spokes[0].network.listeners[listener_key]
-        actual_addr = listener.get_addrs()[0]
-        full_addr = actual_addr.encapsulate(Multiaddr(f"/p2p/{spokes[0].peer_id}"))
+        full_addr = get_peer_listening_address(spokes[0].host)
         
         # Try to connect again quickly
         try:
@@ -174,15 +169,8 @@ async def main():
             report, stats = node.analyze()
             results.append((node, report, stats))
             
-            # Determine risk level from score
-            if report.overall_risk_score >= 0.7:
-                risk_level = "CRITICAL"
-            elif report.overall_risk_score >= 0.5:
-                risk_level = "HIGH"
-            elif report.overall_risk_score >= 0.3:
-                risk_level = "MEDIUM"
-            else:
-                risk_level = "LOW"
+            # Get risk level using PrivacyReport method
+            risk_level = report.get_risk_level()
             
             print(f"\n   {node.name} Analysis:")
             print(f"   {'─' * 60}")

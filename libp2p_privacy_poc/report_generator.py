@@ -62,7 +62,7 @@ class ReportGenerator:
         # Overall risk score
         risk_color = self._get_risk_color(report.overall_risk_score)
         lines.append(color_text(f"Overall Risk Score: {report.overall_risk_score:.2f}/1.00", risk_color))
-        lines.append(color_text(f"Risk Level: {report._get_risk_level()}", risk_color))
+        lines.append(color_text(f"Risk Level: {report.get_risk_level()}", risk_color))
         lines.append("")
         
         # Statistics
@@ -316,7 +316,7 @@ class ReportGenerator:
         <h2>Overall Risk Assessment</h2>
         <div class="risk-score {self._get_risk_class(report.overall_risk_score)}">
             {report.overall_risk_score:.2f}/1.00<br>
-            <span style="font-size: 24px;">{report._get_risk_level()}</span>
+            <span style="font-size: 24px;">{report.get_risk_level()}</span>
         </div>
         
         <h2>Network Statistics</h2>

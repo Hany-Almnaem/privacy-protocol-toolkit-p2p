@@ -73,7 +73,7 @@ class PrivacyReport:
         lines.append("Privacy Analysis Report")
         lines.append("=" * 60)
         lines.append(f"\nOverall Risk Score: {self.overall_risk_score:.2f}/1.00")
-        lines.append(f"Risk Level: {self._get_risk_level()}")
+        lines.append(f"Risk Level: {self.get_risk_level()}")
         lines.append(f"\nTotal Risks Detected: {len(self.risks)}")
         lines.append(f"  - Critical: {len(self.get_critical_risks())}")
         lines.append(f"  - High: {len(self.get_high_risks())}")
@@ -99,8 +99,18 @@ class PrivacyReport:
         lines.append("\n" + "=" * 60)
         return "\n".join(lines)
     
-    def _get_risk_level(self) -> str:
-        """Get overall risk level based on score."""
+    def get_risk_level(self) -> str:
+        """
+        Get overall risk level based on score.
+        
+        Returns one of: "CRITICAL", "HIGH", "MEDIUM", or "LOW"
+        
+        Thresholds:
+        - CRITICAL: >= 0.75
+        - HIGH: >= 0.5
+        - MEDIUM: >= 0.25
+        - LOW: < 0.25
+        """
         if self.overall_risk_score >= 0.75:
             return "CRITICAL"
         elif self.overall_risk_score >= 0.5:
@@ -115,7 +125,7 @@ class PrivacyReport:
         return {
             "timestamp": self.timestamp,
             "overall_risk_score": self.overall_risk_score,
-            "risk_level": self._get_risk_level(),
+            "risk_level": self.get_risk_level(),
             "risks": [risk.to_dict() for risk in self.risks],
             "statistics": self.statistics,
             "peer_analysis": self.peer_analysis,

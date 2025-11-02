@@ -20,6 +20,7 @@ from libp2p_privacy_poc.metadata_collector import MetadataCollector
 from libp2p_privacy_poc.privacy_analyzer import PrivacyAnalyzer
 from libp2p_privacy_poc.report_generator import ReportGenerator
 from libp2p_privacy_poc.mock_zk_proofs import MockZKProofSystem, ZKProofType
+from libp2p_privacy_poc.utils import get_peer_listening_address
 
 # Timeout constants for network operations (in seconds)
 LISTEN_TIMEOUT = 10  # Time to bind listener
@@ -87,11 +88,8 @@ async def scenario_1_timing_correlation():
                     # Make rapid connections (BAD - creates timing correlation)
                     print("\n   Making 3 connections in rapid succession...")
                     for i, peer in enumerate(peer_hosts):
-                        # Get peer's listening address
-                        listener_key = list(peer.get_network().listeners.keys())[0]
-                        listener = peer.get_network().listeners[listener_key]
-                        actual_addr = listener.get_addrs()[0]
-                        full_addr = actual_addr.encapsulate(Multiaddr(f"/p2p/{peer.get_id()}"))
+                        # Get peer's listening address using utility function
+                        full_addr = get_peer_listening_address(peer)
                         
                         # Connect with very short delay - THIS IS THE LEAK! (with timeout protection)
                         with trio.fail_after(CONNECT_TIMEOUT):
@@ -189,10 +187,8 @@ async def scenario_2_anonymity_set():
                 # Connect to both peers
                 print("\n   Connecting to only 2 peers...")
                 for peer in peer_hosts:
-                    listener_key = list(peer.get_network().listeners.keys())[0]
-                    listener = peer.get_network().listeners[listener_key]
-                    actual_addr = listener.get_addrs()[0]
-                    full_addr = actual_addr.encapsulate(Multiaddr(f"/p2p/{peer.get_id()}"))
+                    # Get peer's listening address using utility function
+                    full_addr = get_peer_listening_address(peer)
                     
                     with trio.fail_after(CONNECT_TIMEOUT):
                         await main_host.connect(info_from_p2p_addr(full_addr))
@@ -288,10 +284,8 @@ async def scenario_3_protocol_fingerprinting():
                 # Connect to peers (protocols negotiated automatically)
                 print("\n   Making connections (protocols auto-negotiated)...")
                 for peer in peer_hosts:
-                    listener_key = list(peer.get_network().listeners.keys())[0]
-                    listener = peer.get_network().listeners[listener_key]
-                    actual_addr = listener.get_addrs()[0]
-                    full_addr = actual_addr.encapsulate(Multiaddr(f"/p2p/{peer.get_id()}"))
+                    # Get peer's listening address using utility function
+                    full_addr = get_peer_listening_address(peer)
                     
                     with trio.fail_after(CONNECT_TIMEOUT):
                         await main_host.connect(info_from_p2p_addr(full_addr))
@@ -483,10 +477,8 @@ async def scenario_5_comprehensive_report():
                     # Make rapid connections (timing issue + small anonymity set)
                     print("\n   Making rapid connections (multiple privacy issues)...")
                     for i, peer in enumerate(peer_hosts):
-                        listener_key = list(peer.get_network().listeners.keys())[0]
-                        listener = peer.get_network().listeners[listener_key]
-                        actual_addr = listener.get_addrs()[0]
-                        full_addr = actual_addr.encapsulate(Multiaddr(f"/p2p/{peer.get_id()}"))
+                        # Get peer's listening address using utility function
+                        full_addr = get_peer_listening_address(peer)
                         
                         with trio.fail_after(CONNECT_TIMEOUT):
                             await main_host.connect(info_from_p2p_addr(full_addr))
