@@ -40,14 +40,21 @@ async def test_connection_failure_handling():
         await trio.sleep(0.5)
         
         print("\n2. Attempting to connect to non-existent peer...")
-        # Create a fake peer address (peer doesn't exist)
-        fake_peer_addr = Multiaddr("/ip4/127.0.0.1/tcp/9999/p2p/QmNonExistentPeerID1234567890abcdef")
+        # Create a valid peer ID but point to non-existent address
+        # (Generate valid peer ID format but unreachable endpoint)
+        temp_host = new_host()
+        valid_peer_id = temp_host.get_id()
+        await temp_host.close()
+        
+        fake_peer_addr = Multiaddr(f"/ip4/127.0.0.1/tcp/9999/p2p/{valid_peer_id}")
+        print(f"   Attempting connection to: {fake_peer_addr}")
         
         try:
             peer_info = info_from_p2p_addr(fake_peer_addr)
-            await host.connect(peer_info)
+            with trio.fail_after(5):  # 5 second timeout for connection attempt
+                await host.connect(peer_info)
             print("   ⚠️ Connection succeeded unexpectedly")
-        except Exception as e:
+        except (trio.TooSlowError, Exception) as e:
             print(f"   ✓ Connection failed as expected: {type(e).__name__}")
         
         # Verify collector still works
@@ -59,8 +66,9 @@ async def test_connection_failure_handling():
         analyzer = PrivacyAnalyzer(collector)
         report = analyzer.analyze()
         print(f"   Analysis successful: {report is not None}")
-        
-        await host.close()
+    
+    # Close host AFTER exiting the background_trio_service context
+    await host.close()
     
     print("\n✓ TEST PASSED: Graceful failure handling")
 
@@ -107,21 +115,20 @@ async def test_reconnection_tracking():
             stats1 = collector.get_statistics()
             print(f"   ✓ First connection: {stats1['total_connections']} connections")
             
-            # Disconnect
-            print("\n3. Disconnecting...")
-            await host1.close()
-            await host2.close()
-            await trio.sleep(0.5)
-            
-            # Check connection history
-            print("\n4. Checking connection history...")
+            # Check connection history while still in context
+            print("\n3. Checking connection history...")
             total_events = stats1['total_connections']
             print(f"   Total connection events tracked: {total_events}")
             
             # Verify we captured at least one connection
             assert total_events >= 1, "Should have captured at least one connection"
-            
-            print("\n✓ TEST PASSED: Reconnection tracking working")
+    
+    # Disconnect AFTER exiting the background_trio_service contexts
+    print("\n4. Disconnecting hosts...")
+    await host1.close()
+    await host2.close()
+    
+    print("\n✓ TEST PASSED: Reconnection tracking working")
 
 
 @pytest.mark.trio
