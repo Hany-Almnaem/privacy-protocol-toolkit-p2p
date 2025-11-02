@@ -1,19 +1,19 @@
 """
 Privacy Analysis Demo Scenarios.
 
-This script demonstrates different privacy leak scenarios and shows how
-the analysis tool detects them, along with ZK proof demonstrations.
+This script demonstrates different privacy leak scenarios using REAL py-libp2p 
+connections and shows how the analysis tool detects them, along with ZK proof demonstrations.
 
 Each scenario is self-contained and includes:
-1. Setup and simulation
-2. Privacy analysis
+1. Real network setup with py-libp2p
+2. Privacy analysis on real connections
 3. ZK proof generation
 4. Results and interpretation
 """
 import trio
-import time
 from libp2p import new_host
-from libp2p.peer.id import ID as PeerID
+from libp2p.peer.peerinfo import info_from_p2p_addr
+from libp2p.tools.async_service import background_trio_service
 from multiaddr import Multiaddr
 
 from libp2p_privacy_poc.metadata_collector import MetadataCollector
@@ -41,66 +41,101 @@ async def scenario_1_timing_correlation():
     Scenario 1: Timing Correlation Attack
     
     This scenario demonstrates how rapid, sequential connections can
-    create timing correlations that leak privacy information.
+    create timing correlations that leak privacy information using REAL connections.
     """
-    print_header("SCENARIO 1: Timing Correlation Attack")
+    print_header("SCENARIO 1: Timing Correlation Attack (REAL CONNECTIONS)")
     
     print("\n📖 Description:")
     print("   A node makes multiple connections in rapid succession, creating")
     print("   a distinctive timing pattern that can be used to identify the node.")
     
-    print_subheader("Simulation")
+    print_subheader("Real Network Setup")
     
-    host = new_host()
-    collector = MetadataCollector(host)
+    # Create hub host and multiple target hosts
+    hub_host = new_host()
+    collector = MetadataCollector(hub_host)
     
-    # Create peer IDs
-    peers = [new_host().get_id() for _ in range(5)]
+    # Create 3 peer hosts (reduced from 5 for speed)
+    peer_hosts = [new_host() for _ in range(3)]
     
-    # Simulate rapid connections (BAD - creates timing correlation)
-    print("   Making 5 connections in rapid succession...")
-    for i, peer_id in enumerate(peers):
-        multiaddr = Multiaddr(f"/ip4/10.1.1.{i+1}/tcp/4001")
-        collector.on_connection_opened(peer_id, multiaddr, "outbound")
-        collector.on_protocol_negotiated(peer_id, "/ipfs/id/1.0.0")
-        await trio.sleep(0.01)  # Very short delay - THIS IS THE LEAK!
+    print(f"   Hub: {hub_host.get_id()}")
+    for i, peer in enumerate(peer_hosts):
+        print(f"   Peer {i+1}: {peer.get_id()}")
     
-    print("   ✓ Connections made with 10ms intervals")
+    # Start networks
+    print("\n   Starting networks...")
+    async with background_trio_service(hub_host.get_network()):
+        peer_services = [background_trio_service(peer.get_network()) for peer in peer_hosts]
+        
+        async with peer_services[0]:
+            async with peer_services[1]:
+                async with peer_services[2]:
+                    # Start listeners
+                    await hub_host.get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
+                    for peer in peer_hosts:
+                        await peer.get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
+                    
+                    await trio.sleep(0.5)
+                    print("   ✓ Networks ready")
+                    
+                    # Make rapid connections (BAD - creates timing correlation)
+                    print("\n   Making 3 connections in rapid succession...")
+                    for i, peer in enumerate(peer_hosts):
+                        # Get peer's listening address
+                        listener_key = list(peer.get_network().listeners.keys())[0]
+                        listener = peer.get_network().listeners[listener_key]
+                        actual_addr = listener.get_addrs()[0]
+                        full_addr = actual_addr.encapsulate(Multiaddr(f"/p2p/{peer.get_id()}"))
+                        
+                        # Connect with very short delay - THIS IS THE LEAK!
+                        await hub_host.connect(info_from_p2p_addr(full_addr))
+                        await trio.sleep(0.05)  # 50ms interval = timing correlation!
+                    
+                    # Wait for events to be captured
+                    await trio.sleep(0.5)
+                    print("   ✓ Connections made with 50ms intervals (timing leak!)")
     
-    # Analyze
-    print_subheader("Analysis")
-    analyzer = PrivacyAnalyzer(collector)
-    report = analyzer.analyze()
+                    # Analyze
+                    print_subheader("Analysis")
+                    stats = collector.get_statistics()
+                    print(f"   Total connections: {stats['total_connections']}")
+                    
+                    analyzer = PrivacyAnalyzer(collector)
+                    report = analyzer.analyze()
+                    
+                    print(f"   Risk Score: {report.overall_risk_score:.2f}/1.00")
+                    print(f"   Total Risks: {len(report.risks)}")
+                    timing_risks = [r for r in report.risks if 'Timing' in r.risk_type or 'timing' in r.risk_type.lower()]
+                    print(f"   Timing-Related Risks: {len(timing_risks)}")
+                    
+                    for risk in report.risks[:3]:  # Show top 3 risks
+                        print(f"   🔴 {risk.severity.upper()}: {risk.risk_type}")
+                        print(f"      {risk.description[:70]}...")
+                        if risk.recommendations:
+                            print(f"      → {risk.recommendations[0]}")
+                    
+                    # ZK Proof Demonstration
+                    print_subheader("ZK Proof: Timing Independence")
+                    zk_system = MockZKProofSystem()
+                    
+                    proof = zk_system.generate_timing_independence_proof(
+                        event_1="connection_1",
+                        event_2="connection_2",
+                        time_delta=0.05
+                    )
+                    
+                    print(f"   Proof Type: {proof.proof_type.value}")
+                    print(f"   Proof Valid: {proof.is_valid}")
+                    print(f"\n   With ZK proofs, you could prove that events are timing-independent")
+                    print(f"   without revealing the actual timing values!")
+                    
+                    # Cleanup
+                    print("\n   Cleaning up...")
+                    await hub_host.close()
+                    for peer in peer_hosts:
+                        await peer.close()
     
-    print(f"   Risk Score: {report.overall_risk_score:.2f}/1.00")
-    print(f"   Timing Risks Detected: {len([r for r in report.risks if 'Timing' in r.risk_type])}")
-    
-    for risk in report.risks:
-        if "Timing" in risk.risk_type:
-            print(f"   🔴 {risk.severity.upper()}: {risk.risk_type}")
-            print(f"      {risk.description}")
-            for rec in risk.recommendations[:2]:
-                print(f"      → {rec}")
-    
-    # ZK Proof Demonstration
-    print_subheader("ZK Proof: Timing Independence")
-    zk_system = MockZKProofSystem()
-    
-    proof = zk_system.generate_timing_independence_proof(
-        event_1="connection_1",
-        event_2="connection_2",
-        time_delta=0.01
-    )
-    
-    print(f"   Proof Type: {proof.proof_type.value}")
-    print(f"   Proof Valid: {proof.is_valid}")
-    print(f"\n   With ZK proofs, you could prove that events are timing-independent")
-    print(f"   without revealing the actual timing values!")
-    
-    # Cleanup
-    await host.close()
-    
-    print("\n✅ Scenario 1 Complete")
+    print("\n✅ Scenario 1 Complete (Real Network)")
 
 
 async def scenario_2_anonymity_set():
@@ -108,129 +143,180 @@ async def scenario_2_anonymity_set():
     Scenario 2: Small Anonymity Set
     
     This scenario demonstrates how connecting to too few peers reduces
-    anonymity and makes the node easier to identify.
+    anonymity and makes the node easier to identify using REAL connections.
     """
-    print_header("SCENARIO 2: Small Anonymity Set")
+    print_header("SCENARIO 2: Small Anonymity Set (REAL CONNECTIONS)")
     
     print("\n📖 Description:")
     print("   A node connects to only 2 peers, creating a very small anonymity set.")
     print("   This makes it easier to identify and correlate the node's activity.")
     
-    print_subheader("Simulation")
+    print_subheader("Real Network Setup")
     
-    host = new_host()
-    collector = MetadataCollector(host)
+    # Create host and 2 peers only - VERY BAD for privacy!
+    main_host = new_host()
+    collector = MetadataCollector(main_host)
     
-    # Only 2 peers - VERY BAD for privacy!
-    print("   Connecting to only 2 peers (small anonymity set)...")
-    peer1 = new_host().get_id()
-    peer2 = new_host().get_id()
+    peer_hosts = [new_host() for _ in range(2)]
     
-    collector.on_connection_opened(peer1, Multiaddr("/ip4/10.2.1.1/tcp/4001"), "outbound")
-    await trio.sleep(0.1)
-    collector.on_connection_opened(peer2, Multiaddr("/ip4/10.2.1.2/tcp/4001"), "outbound")
+    print(f"   Main: {main_host.get_id()}")
+    print(f"   Peer 1: {peer_hosts[0].get_id()}")
+    print(f"   Peer 2: {peer_hosts[1].get_id()}")
+    print("   ⚠️  Only 2 peers - small anonymity set!")
     
-    print(f"   ✓ Connected to 2 peers only")
+    # Start networks
+    print("\n   Starting networks...")
+    async with background_trio_service(main_host.get_network()):
+        async with background_trio_service(peer_hosts[0].get_network()):
+            async with background_trio_service(peer_hosts[1].get_network()):
+                # Start listeners
+                await main_host.get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
+                await peer_hosts[0].get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
+                await peer_hosts[1].get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
+                
+                await trio.sleep(0.5)
+                print("   ✓ Networks ready")
+                
+                # Connect to both peers
+                print("\n   Connecting to only 2 peers...")
+                for peer in peer_hosts:
+                    listener_key = list(peer.get_network().listeners.keys())[0]
+                    listener = peer.get_network().listeners[listener_key]
+                    actual_addr = listener.get_addrs()[0]
+                    full_addr = actual_addr.encapsulate(Multiaddr(f"/p2p/{peer.get_id()}"))
+                    
+                    await main_host.connect(info_from_p2p_addr(full_addr))
+                    await trio.sleep(0.1)
+                
+                # Wait for events
+                await trio.sleep(0.5)
+                print(f"   ✓ Connected to 2 peers only (privacy risk!)")
     
-    # Analyze
-    print_subheader("Analysis")
-    analyzer = PrivacyAnalyzer(collector)
-    report = analyzer.analyze()
+                # Analyze
+                print_subheader("Analysis")
+                stats = collector.get_statistics()
+                print(f"   Total connections: {stats['total_connections']}")
+                print(f"   Anonymity Set Size: {stats['unique_peers']}")
+                
+                analyzer = PrivacyAnalyzer(collector)
+                report = analyzer.analyze()
+                
+                print(f"   Risk Score: {report.overall_risk_score:.2f}/1.00")
+                anonymity_risks = [r for r in report.risks if 'Anonymity' in r.risk_type or 'anonymity' in r.risk_type.lower()]
+                print(f"   Anonymity Risks Detected: {len(anonymity_risks)}")
+                
+                for risk in report.risks[:3]:
+                    print(f"   🔴 {risk.severity.upper()}: {risk.risk_type}")
+                    print(f"      {risk.description[:70]}...")
+                    if risk.recommendations:
+                        print(f"      → {risk.recommendations[0]}")
+                
+                # ZK Proof Demonstration
+                print_subheader("ZK Proof: Anonymity Set Membership")
+                zk_system = MockZKProofSystem()
+                
+                proof = zk_system.generate_anonymity_set_proof(
+                    peer_id=str(main_host.get_id()),
+                    anonymity_set_size=stats['unique_peers']  # Small set!
+                )
+                
+                print(f"   Proof Type: {proof.proof_type.value}")
+                print(f"   Anonymity Set Size: {proof.public_inputs['anonymity_set_size']}")
+                print(f"   Proof Valid: {proof.is_valid}")
+                print(f"\n   With ZK proofs, you could prove you're one of N peers")
+                print(f"   without revealing which one!")
+                print(f"   (But N={stats['unique_peers']} is still too small for good privacy!)")
+                
+                # Cleanup
+                print("\n   Cleaning up...")
+                await main_host.close()
+                for peer in peer_hosts:
+                    await peer.close()
     
-    stats = collector.get_statistics()
-    print(f"   Risk Score: {report.overall_risk_score:.2f}/1.00")
-    print(f"   Anonymity Set Size: {stats['unique_peers']}")
-    print(f"   Anonymity Risks Detected: {len([r for r in report.risks if 'Anonymity' in r.risk_type])}")
-    
-    for risk in report.risks:
-        if "Anonymity" in risk.risk_type:
-            print(f"   🔴 {risk.severity.upper()}: {risk.risk_type}")
-            print(f"      {risk.description}")
-            for rec in risk.recommendations[:2]:
-                print(f"      → {rec}")
-    
-    # ZK Proof Demonstration
-    print_subheader("ZK Proof: Anonymity Set Membership")
-    zk_system = MockZKProofSystem()
-    
-    proof = zk_system.generate_anonymity_set_proof(
-        peer_id=str(host.get_id()),
-        anonymity_set_size=2  # Small set!
-    )
-    
-    print(f"   Proof Type: {proof.proof_type.value}")
-    print(f"   Anonymity Set Size: {proof.public_inputs['anonymity_set_size']}")
-    print(f"   Proof Valid: {proof.is_valid}")
-    print(f"\n   With ZK proofs, you could prove you're one of N peers")
-    print(f"   without revealing which one!")
-    print(f"   (But N=2 is still too small for good privacy!)")
-    
-    # Cleanup
-    await host.close()
-    
-    print("\n✅ Scenario 2 Complete")
+    print("\n✅ Scenario 2 Complete (Real Network)")
 
 
 async def scenario_3_protocol_fingerprinting():
     """
     Scenario 3: Protocol Fingerprinting
     
-    This scenario demonstrates how using unique protocol combinations
-    can create a fingerprint that identifies the node.
+    This scenario demonstrates protocol fingerprinting concept with REAL connections.
+    Note: In real py-libp2p, protocols are negotiated automatically during connections.
     """
-    print_header("SCENARIO 3: Protocol Fingerprinting")
+    print_header("SCENARIO 3: Protocol Fingerprinting (REAL CONNECTIONS)")
     
     print("\n📖 Description:")
-    print("   A node uses an unusual combination of protocols that creates")
-    print("   a unique fingerprint, making the node easily identifiable.")
+    print("   Demonstrates how protocol usage patterns can create fingerprints.")
+    print("   With real py-libp2p, protocols are negotiated automatically.")
     
-    print_subheader("Simulation")
+    print_subheader("Real Network Setup")
     
-    host = new_host()
-    collector = MetadataCollector(host)
+    main_host = new_host()
+    collector = MetadataCollector(main_host)
     
-    # Connect to peers
-    peers = [new_host().get_id() for _ in range(4)]
+    # Create 2 peer hosts
+    peer_hosts = [new_host() for _ in range(2)]
     
-    print("   Making connections with unusual protocol combinations...")
-    for i, peer_id in enumerate(peers):
-        multiaddr = Multiaddr(f"/ip4/10.3.1.{i+1}/tcp/4001")
-        collector.on_connection_opened(peer_id, multiaddr, "outbound")
-        
-        # Use a mix of common and uncommon protocols
-        collector.on_protocol_negotiated(peer_id, "/ipfs/id/1.0.0")  # Common
-        collector.on_protocol_negotiated(peer_id, "/ipfs/ping/1.0.0")  # Common
-        
-        if i % 2 == 0:
-            # Unusual protocol - creates fingerprint!
-            collector.on_protocol_negotiated(peer_id, "/custom/unusual-protocol/1.0.0")
-        
-        await trio.sleep(0.1)
+    print(f"   Main: {main_host.get_id()}")
+    for i, peer in enumerate(peer_hosts):
+        print(f"   Peer {i+1}: {peer.get_id()}")
     
-    stats = collector.get_statistics()
-    print(f"   ✓ Used {stats['protocols_used']} different protocols")
+    print("\n   Starting networks...")
+    async with background_trio_service(main_host.get_network()):
+        async with background_trio_service(peer_hosts[0].get_network()):
+            async with background_trio_service(peer_hosts[1].get_network()):
+                # Start listeners
+                await main_host.get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
+                for peer in peer_hosts:
+                    await peer.get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
+                
+                await trio.sleep(0.5)
+                print("   ✓ Networks ready")
+                
+                # Connect to peers (protocols negotiated automatically)
+                print("\n   Making connections (protocols auto-negotiated)...")
+                for peer in peer_hosts:
+                    listener_key = list(peer.get_network().listeners.keys())[0]
+                    listener = peer.get_network().listeners[listener_key]
+                    actual_addr = listener.get_addrs()[0]
+                    full_addr = actual_addr.encapsulate(Multiaddr(f"/p2p/{peer.get_id()}"))
+                    
+                    await main_host.connect(info_from_p2p_addr(full_addr))
+                    await trio.sleep(0.1)
+                
+                # Wait for events
+                await trio.sleep(0.5)
+                
+                stats = collector.get_statistics()
+                print(f"   ✓ Connected to {stats['unique_peers']} peers")
+                print(f"   ✓ Protocols observed: {stats['protocols_used']}")
     
-    # Analyze
-    print_subheader("Analysis")
-    analyzer = PrivacyAnalyzer(collector)
-    report = analyzer.analyze()
+                # Analyze
+                print_subheader("Analysis")
+                analyzer = PrivacyAnalyzer(collector)
+                report = analyzer.analyze()
+                
+                print(f"   Risk Score: {report.overall_risk_score:.2f}/1.00")
+                print(f"   Total Risks: {len(report.risks)}")
+                protocol_risks = [r for r in report.risks if 'Protocol' in r.risk_type or 'Fingerprint' in r.risk_type]
+                print(f"   Protocol/Fingerprint Risks: {len(protocol_risks)}")
+                
+                for risk in report.risks[:3]:
+                    print(f"   🔴 {risk.severity.upper()}: {risk.risk_type}")
+                    print(f"      {risk.description[:70]}...")
+                    if risk.recommendations:
+                        print(f"      → {risk.recommendations[0]}")
+                
+                print("\n   💡 Insight: Protocol patterns can fingerprint nodes!")
+                print("   In production, unusual protocol combinations can make nodes identifiable.")
+                
+                # Cleanup
+                print("\n   Cleaning up...")
+                await main_host.close()
+                for peer in peer_hosts:
+                    await peer.close()
     
-    print(f"   Risk Score: {report.overall_risk_score:.2f}/1.00")
-    print(f"   Protocol Risks Detected: {len([r for r in report.risks if 'Protocol' in r.risk_type or 'Fingerprint' in r.risk_type])}")
-    
-    for risk in report.risks:
-        if "Protocol" in risk.risk_type or "Fingerprint" in risk.risk_type:
-            print(f"   🔴 {risk.severity.upper()}: {risk.risk_type}")
-            print(f"      {risk.description}")
-            for rec in risk.recommendations[:2]:
-                print(f"      → {rec}")
-    
-    print("\n   💡 Insight: Using uncommon protocols makes your node stand out!")
-    
-    # Cleanup
-    await host.close()
-    
-    print("\n✅ Scenario 3 Complete")
+    print("\n✅ Scenario 3 Complete (Real Network)")
 
 
 async def scenario_4_zk_proof_showcase():
@@ -239,6 +325,7 @@ async def scenario_4_zk_proof_showcase():
     
     This scenario demonstrates all types of ZK proofs available in the
     mock system and explains their privacy benefits.
+    (Conceptual demo - focuses on ZK proof concepts, not network connections)
     """
     print_header("SCENARIO 4: Zero-Knowledge Proof Showcase")
     
@@ -340,88 +427,109 @@ async def scenario_5_comprehensive_report():
     """
     Scenario 5: Comprehensive Report Generation
     
-    This scenario creates a complex network situation and generates
-    a full privacy report with recommendations.
+    This scenario creates a complex network situation with REAL connections 
+    and generates a full privacy report with recommendations.
     """
-    print_header("SCENARIO 5: Comprehensive Privacy Report")
+    print_header("SCENARIO 5: Comprehensive Privacy Report (REAL CONNECTIONS)")
     
     print("\n📖 Description:")
-    print("   Creating a complex scenario with multiple privacy issues and")
-    print("   generating a comprehensive report with ZK proofs.")
+    print("   Creating a scenario with multiple privacy issues using real connections")
+    print("   and generating a comprehensive report with ZK proofs.")
     
-    print_subheader("Simulation")
+    print_subheader("Real Network Setup")
     
-    host = new_host()
-    collector = MetadataCollector(host)
+    main_host = new_host()
+    collector = MetadataCollector(main_host)
     
-    # Simulate various privacy-problematic behaviors
-    print("   Simulating node with multiple privacy issues...")
+    # Create 3 peers (small anonymity set - privacy issue!)
+    peer_hosts = [new_host() for _ in range(3)]
     
-    # Small anonymity set
-    peers = [new_host().get_id() for _ in range(3)]
+    print(f"   Main: {main_host.get_id()}")
+    for i, peer in enumerate(peer_hosts):
+        print(f"   Peer {i+1}: {peer.get_id()}")
+    print("   ⚠️  Small anonymity set + rapid connections = multiple privacy issues!")
     
-    # Timing correlations
-    for i, peer_id in enumerate(peers):
-        multiaddr = Multiaddr(f"/ip4/10.5.1.{i+1}/tcp/4001")
-        collector.on_connection_opened(peer_id, multiaddr, "outbound")
+    print("\n   Starting networks...")
+    async with background_trio_service(main_host.get_network()):
+        peer_services = [background_trio_service(peer.get_network()) for peer in peer_hosts]
         
-        # Various protocols
-        collector.on_protocol_negotiated(peer_id, "/ipfs/id/1.0.0")
-        collector.on_protocol_negotiated(peer_id, "/ipfs/bitswap/1.2.0")
-        collector.on_protocol_negotiated(peer_id, "/custom/unique/1.0.0")
-        
-        # Multiple streams
-        for _ in range(2 + i):
-            collector.on_stream_opened(peer_id)
-        
-        await trio.sleep(0.015)  # Rapid timing
+        async with peer_services[0]:
+            async with peer_services[1]:
+                async with peer_services[2]:
+                    # Start listeners
+                    await main_host.get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
+                    for peer in peer_hosts:
+                        await peer.get_network().listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
+                    
+                    await trio.sleep(0.5)
+                    print("   ✓ Networks ready")
+                    
+                    # Make rapid connections (timing issue + small anonymity set)
+                    print("\n   Making rapid connections (multiple privacy issues)...")
+                    for i, peer in enumerate(peer_hosts):
+                        listener_key = list(peer.get_network().listeners.keys())[0]
+                        listener = peer.get_network().listeners[listener_key]
+                        actual_addr = listener.get_addrs()[0]
+                        full_addr = actual_addr.encapsulate(Multiaddr(f"/p2p/{peer.get_id()}"))
+                        
+                        await main_host.connect(info_from_p2p_addr(full_addr))
+                        await trio.sleep(0.03)  # Rapid timing - privacy leak!
+                    
+                    # Wait for events
+                    await trio.sleep(0.5)
+                    print("   ✓ Complex scenario created")
     
-    print("   ✓ Simulation complete")
+                    # Analyze
+                    print_subheader("Analysis")
+                    stats = collector.get_statistics()
+                    print(f"   Connections: {stats['total_connections']}")
+                    print(f"   Unique peers: {stats['unique_peers']}")
+                    
+                    analyzer = PrivacyAnalyzer(collector)
+                    report = analyzer.analyze()
+                    
+                    print(f"   Risk Score: {report.overall_risk_score:.2f}/1.00")
+                    print(f"   Total Risks: {len(report.risks)}")
+                    print(f"   Critical: {len(report.get_critical_risks())}")
+                    print(f"   High: {len(report.get_high_risks())}")
+                    
+                    # Generate ZK proofs
+                    print_subheader("Generating ZK Proofs")
+                    zk_system = MockZKProofSystem()
+                    
+                    zk_proofs = {
+                        "anonymity": [zk_system.generate_anonymity_set_proof(
+                            peer_id=str(main_host.get_id()),
+                            anonymity_set_size=stats['unique_peers']
+                        )],
+                        "timing": [zk_system.generate_timing_independence_proof(
+                            event_1="conn1",
+                            event_2="conn2",
+                            time_delta=0.03
+                        )]
+                    }
+                    
+                    print(f"   ✓ Generated {sum(len(v) for v in zk_proofs.values())} ZK proofs")
+                    
+                    # Generate comprehensive report
+                    print_subheader("Comprehensive Report")
+                    report_gen = ReportGenerator()
+                    
+                    console_report = report_gen.generate_console_report(
+                        report=report,
+                        zk_proofs=zk_proofs,
+                        verbose=True
+                    )
+                    
+                    print(console_report)
+                    
+                    # Cleanup
+                    print("\n   Cleaning up...")
+                    await main_host.close()
+                    for peer in peer_hosts:
+                        await peer.close()
     
-    # Analyze
-    print_subheader("Analysis")
-    analyzer = PrivacyAnalyzer(collector)
-    report = analyzer.analyze()
-    
-    print(f"   Risk Score: {report.overall_risk_score:.2f}/1.00")
-    print(f"   Total Risks: {len(report.risks)}")
-    print(f"   Critical: {len(report.get_critical_risks())}")
-    print(f"   High: {len(report.get_high_risks())}")
-    
-    # Generate ZK proofs
-    print_subheader("Generating ZK Proofs")
-    zk_system = MockZKProofSystem()
-    
-    zk_proofs = {
-        "anonymity": [zk_system.generate_anonymity_set_proof(
-            peer_id=str(host.get_id()),
-            anonymity_set_size=3
-        )],
-        "timing": [zk_system.generate_timing_independence_proof(
-            event_1="conn1",
-            event_2="conn2",
-            time_delta=0.015
-        )]
-    }
-    
-    print(f"   ✓ Generated {sum(len(v) for v in zk_proofs.values())} ZK proofs")
-    
-    # Generate comprehensive report
-    print_subheader("Comprehensive Report")
-    report_gen = ReportGenerator()
-    
-    console_report = report_gen.generate_console_report(
-        report=report,
-        zk_proofs=zk_proofs,
-        verbose=True
-    )
-    
-    print(console_report)
-    
-    # Cleanup
-    await host.close()
-    
-    print("\n✅ Scenario 5 Complete")
+    print("\n✅ Scenario 5 Complete (Real Network)")
 
 
 async def main():
