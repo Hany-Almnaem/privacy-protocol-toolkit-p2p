@@ -138,10 +138,17 @@ trio.run(main)
 libp2p-privacy analyze [OPTIONS]
 ```
 
-Analyzes privacy leaks in real py-libp2p network connections.
+Analyzes privacy leaks in **real py-libp2p network connections**. Creates a live network host, monitors connections for the specified duration, and performs privacy analysis on captured events.
 
 **Options:**
 
+**Network Configuration:**
+- `--duration SECONDS` - How long to monitor network (default: 30)
+- `--listen-addr MULTIADDR` - Listener address (default: /ip4/127.0.0.1/tcp/0)
+- `--connect-to MULTIADDR` - Peer to connect to (optional)
+- `--simulate` - Use simulated data instead of real network (for testing)
+
+**Output Configuration:**
 - `--format {console,json,html}` - Output format (default: console)
 - `--output PATH` - Save report to file
 - `--with-zk-proofs` - Include mock ZK proofs (demonstration only)
@@ -150,8 +157,17 @@ Analyzes privacy leaks in real py-libp2p network connections.
 **Examples:**
 
 ```bash
-# Console output (default)
+# Quick analysis (5 seconds)
+libp2p-privacy analyze --duration 5
+
+# Standard analysis (30 seconds, default)
 libp2p-privacy analyze
+
+# Connect to a specific peer
+libp2p-privacy analyze --connect-to /ip4/127.0.0.1/tcp/4001/p2p/QmPeer...
+
+# Custom listen address
+libp2p-privacy analyze --listen-addr /ip4/0.0.0.0/tcp/8000
 
 # JSON for automation
 libp2p-privacy analyze --format json --output report.json
@@ -159,8 +175,11 @@ libp2p-privacy analyze --format json --output report.json
 # HTML for web viewing
 libp2p-privacy analyze --format html --output report.html
 
-# Full analysis with ZK proofs
-libp2p-privacy analyze --format html --with-zk-proofs --verbose
+# Full analysis with ZK proofs (JSON)
+libp2p-privacy analyze --format json --with-zk-proofs --output full_report.json
+
+# Simulated data (for testing/development)
+libp2p-privacy analyze --simulate --duration 2
 ```
 
 **Output Formats:**
@@ -173,30 +192,45 @@ libp2p-privacy analyze --format html --with-zk-proofs --verbose
 
 **Basic Usage:**
 ```bash
-libp2p-privacy demo [OPTIONS]
+libp2p-privacy demo
 ```
 
-**Options:**
-
-- `--scenario {all,timing,linkability,anonymity}` - Which demo to run
-- `--verbose` - Detailed output
+Runs **all 5 demonstration scenarios** with real py-libp2p networks:
 
 **Scenarios:**
 
-1. **Timing** - Shows how timing patterns leak privacy
-2. **Linkability** - Demonstrates peer linkability detection
-3. **Anonymity** - Shows anonymity set analysis with ZK proofs
+1. **Timing Correlation** - Shows how timing patterns leak privacy
+   - Creates 3 real peers with specific timing patterns
+   - Demonstrates timing correlation detection
+
+2. **Small Anonymity Set** - Demonstrates anonymity set analysis
+   - Creates 2 real peers (below threshold)
+   - Shows high-risk anonymity detection
+
+3. **Protocol Fingerprinting** - Shows protocol analysis
+   - Creates multiple peers with different protocols
+   - Demonstrates fingerprinting detection
+
+4. **ZK Proof Showcase** - Mock ZK proof concepts (conceptual)
+   - Demonstrates 4 types of mock ZK proofs
+   - Shows anonymity set membership proofs
+
+5. **Comprehensive Report** - Full analysis demonstration
+   - Creates 4 real peers in complex network
+   - Generates all report formats (console/JSON/HTML)
+   - Includes mock ZK proofs
 
 **Examples:**
 
 ```bash
-# Run all demonstrations
+# Run all demonstrations (takes ~2-3 minutes)
 libp2p-privacy demo
 
-# Run specific scenario
-libp2p-privacy demo --scenario timing
-libp2p-privacy demo --scenario anonymity --verbose
+# Skip slow tests in automated environments
+SKIP_SLOW_TESTS=1 libp2p-privacy demo
 ```
+
+**Note:** Each scenario creates real py-libp2p connections. Total runtime is approximately 2-3 minutes for all scenarios.
 
 ### `version` - Version Info
 
@@ -238,15 +272,17 @@ async def setup():
     
     # Start network with proper lifecycle management
     async with background_trio_service(host.get_network()):
-        # Network is now active, events will be captured
+        # Network is now active, events will be captured automatically
+        # via INotifee interface - no manual calls needed!
         # Your application code here...
         pass
     
     return collector
 
-# For manual event reporting (testing/simulation):
-collector = MetadataCollector(libp2p_host=None)
-collector.on_connection_opened(peer_id, multiaddr, "outbound")
+# Note: For testing/simulation only (not recommended for production):
+# You can manually report events without a real host
+collector = MetadataCollector(libp2p_host=None)  # No real host
+collector.on_connection_opened(peer_id, multiaddr, "outbound")  # Manual event
 ```
 
 #### Step 3: Run Analysis
