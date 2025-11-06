@@ -1,12 +1,47 @@
 # libp2p Privacy Analysis Tool
 
-> ⚠️ **PROOF OF CONCEPT** - Mock ZK proofs for demonstration only
+> **REAL py-libp2p Integration** ✅ | **Mock ZK Proofs** ⚠️ (demonstration only)
 
-A privacy analysis tool for py-libp2p that detects privacy leaks in real network connections and demonstrates zero-knowledge proof concepts.
+A privacy analysis tool that detects privacy leaks in **real py-libp2p network connections** and demonstrates zero-knowledge proof concepts.
+
+**What's Real:**
+- ✅ Full py-libp2p network integration with automatic event capture
+- ✅ 6 privacy detection algorithms analyzing real network metadata
+- ✅ Real TCP connections, timing analysis, and pattern detection
+
+**What's Mock:**
+- ⚠️ Zero-knowledge proofs (conceptual demonstration, not cryptographically secure)
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+---
+
+## 🎯 Best Way to Get Started
+
+**Jump straight to the examples!** They show everything working with real py-libp2p connections:
+
+```bash
+# Install
+pip install -e .
+
+# Run the basic 2-node example (30 seconds)
+python examples/basic_analysis.py
+
+# See real multi-node network analysis (1 minute)
+python examples/multi_node_scenario.py
+```
+
+You'll see:
+- ✅ Real libp2p hosts created
+- ✅ Real TCP connections established
+- ✅ `[PrivacyNotifee] Connected:` messages showing live captures
+- ✅ Privacy analysis on actual network metadata
+- ✅ Mock ZK proof generation
+
+**For developers:** Check the [Python integration example](#use-in-python) below to integrate into your own py-libp2p applications.
+
+---
 
 
 ## Quick Start
@@ -18,27 +53,45 @@ cd libp2p_privacy_poc
 pip install -e .
 ```
 
-### Run Analysis
+### See It In Action (Recommended)
+
+**The best way to see real network analysis is through our examples:**
 
 ```bash
-# Start real network analysis (monitors for 30 seconds by default)
-libp2p-privacy analyze
+# 1. Basic 2-node real network analysis (30 seconds)
+python examples/basic_analysis.py
 
-# Short analysis (3 seconds)
-libp2p-privacy analyze --duration 3
+# 2. Multi-node star network with 3 nodes (1 minute)
+python examples/multi_node_scenario.py
 
-# Connect to a specific peer and analyze
+# 3. All 5 demonstration scenarios with real connections (5 minutes)
+python examples/demo_scenarios.py
+```
+
+These examples create **real py-libp2p hosts**, establish **real TCP connections**, and perform **actual privacy analysis** on live network metadata! 🚀
+
+### CLI Usage
+
+```bash
+# Create a real libp2p host and monitor for connections
+# (Note: This creates a host and listens, but needs peers to analyze)
+libp2p-privacy analyze --duration 10
+
+# To analyze actual traffic, connect to a peer:
 libp2p-privacy analyze --connect-to /ip4/127.0.0.1/tcp/4001/p2p/QmPeer123...
 
-# HTML report with ZK proofs
-libp2p-privacy analyze --format html --with-zk-proofs --output report.html
+# Generate reports in different formats
+libp2p-privacy analyze --format html --output report.html
+libp2p-privacy analyze --format json --with-zk-proofs --output report.json
 
-# Use simulated data (for testing/development)
+# Use simulated data (for testing without network setup)
 libp2p-privacy analyze --simulate
 
-# Run all 5 demonstration scenarios
+# Run all 5 demo scenarios (uses real connections)
 libp2p-privacy demo
 ```
+
+💡 **Tip**: For quick demonstrations, use the Python examples above. They automatically create connected nodes and show real analysis!
 
 ### Use in Python
 
@@ -87,16 +140,17 @@ trio.run(analyze_privacy)
 
 ## CLI Commands
 
-### Analyze Command (Real Network)
+### Analyze Command
+
+Creates a real py-libp2p host, monitors network events, and runs privacy analysis.
 
 ```bash
-# Analyze privacy with real py-libp2p network
 libp2p-privacy analyze [OPTIONS]
 
 Options:
-  --duration SECONDS       Analysis duration (default: 30)
+  --duration SECONDS       Monitor duration in seconds (default: 30)
   --listen-addr MULTIADDR  Listen address (default: /ip4/127.0.0.1/tcp/0)
-  --connect-to MULTIADDR   Peer to connect to (optional)
+  --connect-to MULTIADDR   Peer multiaddr to connect to (optional but recommended)
   --format {console,json,html}  Output format (default: console)
   --output PATH            Output file (default: stdout)
   --with-zk-proofs         Include mock ZK proofs in report
@@ -104,18 +158,20 @@ Options:
   --simulate               Use simulated data (for testing)
 
 Examples:
-  # Quick 5-second analysis
+  # Monitor an isolated host (will show "0 connections" but validates setup)
   libp2p-privacy analyze --duration 5
 
-  # Connect to peer and analyze
+  # Analyze actual network traffic by connecting to a peer
   libp2p-privacy analyze --connect-to /ip4/127.0.0.1/tcp/4001/p2p/QmPeer...
 
-  # Generate HTML report
-  libp2p-privacy analyze --format html --output report.html
+  # Generate HTML report with ZK proofs
+  libp2p-privacy analyze --format html --with-zk-proofs --output report.html
 
-  # Full analysis with ZK proofs (JSON)
-  libp2p-privacy analyze --with-zk-proofs --format json --output report.json
+  # Quick test with simulated data (no real network needed)
+  libp2p-privacy analyze --simulate --duration 3
 ```
+
+💡 **Note**: For demonstrations with actual network traffic, **use the Python examples** (`python examples/basic_analysis.py`) which automatically create multiple connected nodes!
 
 ### Demo Command
 
@@ -189,46 +245,67 @@ libp2p_privacy_poc/
 
 ## Example Output
 
+When you run `python examples/basic_analysis.py`, you'll see:
+
 ```
-====================================================================
-libp2p Privacy Analysis Tool - Real Network Monitoring
-====================================================================
+======================================================================
+libp2p Privacy Analysis Tool - Basic Example
+======================================================================
 
-Starting REAL py-libp2p network...
-  Host ID: QmVhJVRSYHNSHgR9dJNbDxvKM5zDcX1ED7Bc1o7B...
-  Listening on: /ip4/127.0.0.1/tcp/54321
+Using REAL py-libp2p connections with automatic event capture
 
-Monitoring network for 30 seconds...
-  Events captured: 5 connections, 12 streams
-  Unique peers: 3
+1. Creating two libp2p hosts...
+   Host1 ID: QmVhJVRSYHNSHgR9dJNbDxvKM5zDcX1ED7Bc1o7B...
+   Host2 ID: QmT8RUDJd5KV8wAZHkiJEFPGvJqK2Rw7LcQxt9Md...
 
-Running Privacy Analysis...
+2. Creating MetadataCollector with automatic event capture...
+   ✓ Collector attached (events will be auto-captured via INotifee)
 
-====================================================================
+3. Starting networks...
+   ✓ Networks started
+
+4. Starting listeners...
+   ✓ Host2 listening on: /ip4/127.0.0.1/tcp/54321/p2p/QmT8R...
+
+5. Establishing real connection...
+   [PrivacyNotifee] Connected: QmT8R... via /ip4/127.0.0.1/tcp/54321
+   ✓ Connection established!
+
+6. Events captured by MetadataCollector:
+   Total connections: 1
+   Active connections: 1
+   Unique peers: 1
+   ✓ Real connection events captured successfully!
+
+7. Running Privacy Analysis...
+   Analysis Complete!
+   - Overall Risk Score: 0.75/1.00
+   - Risks Detected: 1
+   - High Risks: 1
+
+======================================================================
 PRIVACY ANALYSIS REPORT
-====================================================================
-Overall Risk Score: 0.66/1.00
+======================================================================
+Overall Risk Score: 0.75/1.00
 Risk Level: HIGH
 
-Privacy Risks Detected: 3
-  ⚠️  HIGH: Small Anonymity Set (3 peers - below threshold of 5)
-  ⚠️  MEDIUM: Timing Correlation (45% correlation in connection patterns)
-  ⚠️  LOW: Connection Burst Pattern (0.2s average interval)
+PRIVACY RISKS DETECTED
+  HIGH - Small Anonymity Set
+    Small anonymity set: only 1 unique peers observed
+    → Connect to more peers to increase anonymity set
 
-NETWORK STATISTICS
-  Total connections: 5
-  Active connections: 3
-  Unique peers: 3
-  Protocols used: 2 [/ipfs/ping/1.0.0, /ipfs/id/1.0.0]
-  Listening addresses: 2
-
-RECOMMENDATIONS
-  1. Add random delays between connections
-  2. Connect to more peers to increase anonymity set (target: 10+)
-  3. Implement timing obfuscation
-  4. Use connection pooling to mask patterns
+8. Generating anonymity set proof...
+   ✓ Proof generated
+   Type: ZKProofType.ANONYMITY_SET_MEMBERSHIP
+   Verification: ✓ Valid
 
 ✓ Analysis Complete!
+
+💡 Key Achievement:
+   - Real py-libp2p connections established and analyzed
+   - Events automatically captured via INotifee
+   - Privacy analysis performed on real network metadata
+   - Ready for production integration!
 ```
 
 ## Requirements
@@ -307,7 +384,7 @@ Areas for contribution:
 ## Statistics
 
 - **Code**: ~3,500+ lines
-- **Documentation**: 6 comprehensive files
+- **Documentation**: 5 comprehensive files
 - **Privacy Detection Algorithms**: 6 working methods
 - **ZK Proof Types**: 4 (mock implementation)
 - **Report Formats**: 3 (console/JSON/HTML)
