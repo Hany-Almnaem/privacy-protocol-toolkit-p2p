@@ -35,3 +35,9 @@ class CryptographicError(PrivacyProtocolError):
     """Cryptographic operation error."""
 
     pass
+
+
+class SecurityError(PrivacyProtocolError):
+    """Security requirement violation."""
+
+    pass
