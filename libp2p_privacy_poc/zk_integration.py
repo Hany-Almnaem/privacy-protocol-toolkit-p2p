@@ -416,3 +416,105 @@ class ZKIntegrationInterface:
             }
         }
 
+
+def generate_real_commitment_proof(collector) -> Dict[str, Any]:
+    """
+    Generate and verify a real Pedersen+Schnorr commitment-opening proof.
+
+    Returns a dict with proof metadata and verification result. On failure,
+    returns verified=False and an error message without raising.
+    """
+    result = {
+        "backend": "pedersen",
+        "statement": "commitment_opening_pok_v1",
+        "peer_id": None,
+        "session_id": None,
+        "verified": False,
+        "error": None,
+    }
+
+    try:
+        if collector is None:
+            raise ValueError("collector is required")
+
+        peer_id = None
+        if getattr(collector, "peers", None):
+            peer_id = sorted(collector.peers.keys())[0]
+        elif getattr(collector, "connections", None):
+            peers = {meta.peer_id for meta in collector.connections.values()}
+            if peers:
+                peer_id = sorted(peers)[0]
+        elif getattr(collector, "connection_history", None):
+            peers = {meta.peer_id for meta in collector.connection_history}
+            if peers:
+                peer_id = sorted(peers)[0]
+
+        if not peer_id:
+            raise ValueError("no peers available for real ZK proof")
+
+        result["peer_id"] = peer_id
+
+        session_id = None
+        if getattr(collector, "active_sessions", None):
+            matching = sorted(
+                sid for sid in collector.active_sessions
+                if sid.startswith(f"{peer_id}_")
+            )
+            if matching:
+                session_id = matching[0]
+            else:
+                session_id = sorted(collector.active_sessions)[0]
+
+        if session_id is None and getattr(collector, "connections", None):
+            matching = sorted(
+                sid for sid, meta in collector.connections.items()
+                if meta.peer_id == peer_id
+            )
+            if matching:
+                session_id = matching[0]
+
+        if session_id is None:
+            timestamps = []
+            if getattr(collector, "connections", None):
+                timestamps.extend(
+                    meta.timestamp_start
+                    for meta in collector.connections.values()
+                    if meta.peer_id == peer_id
+                )
+            if getattr(collector, "connection_history", None):
+                timestamps.extend(
+                    meta.timestamp_start
+                    for meta in collector.connection_history
+                    if meta.peer_id == peer_id
+                )
+            peer_meta = getattr(collector, "peers", {}).get(peer_id)
+            if peer_meta is not None:
+                timestamps.append(getattr(peer_meta, "first_seen", 0))
+            timestamp = min(timestamps) if timestamps else 0
+            session_id = f"{peer_id}:{int(timestamp)}"
+
+        result["session_id"] = session_id
+
+        from libp2p_privacy_poc.privacy_protocol.factory import get_zk_backend
+        from libp2p_privacy_poc.privacy_protocol.types import ProofContext
+
+        ctx = ProofContext(
+            peer_id=peer_id,
+            session_id=session_id,
+            metadata={"source": "real_zk_integration"},
+        )
+        backend = get_zk_backend(prefer="pedersen")
+        if not hasattr(backend, "generate_commitment_opening_proof"):
+            raise AttributeError(
+                "backend does not support commitment opening proofs"
+            )
+
+        proof = backend.generate_commitment_opening_proof(ctx)
+        is_valid = backend.verify_proof(proof)
+        result["verified"] = bool(is_valid)
+        return result
+
+    except Exception as exc:
+        result["error"] = str(exc)
+        print(f"Warning: real ZK proof unavailable: {exc}")
+        return result

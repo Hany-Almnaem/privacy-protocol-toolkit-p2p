@@ -19,7 +19,10 @@ from libp2p_privacy_poc.metadata_collector import MetadataCollector
 from libp2p_privacy_poc.privacy_analyzer import PrivacyAnalyzer
 from libp2p_privacy_poc.mock_zk_proofs import MockZKProofSystem
 from libp2p_privacy_poc.report_generator import ReportGenerator
-from libp2p_privacy_poc.zk_integration import ZKDataPreparator
+from libp2p_privacy_poc.zk_integration import (
+    ZKDataPreparator,
+    generate_real_commitment_proof,
+)
 
 
 @click.group()
@@ -54,6 +57,11 @@ def main():
     help='Include mock ZK proofs in the report'
 )
 @click.option(
+    '--with-real-zk',
+    is_flag=True,
+    help='Include real Pedersen+Schnorr proof (experimental)'
+)
+@click.option(
     '--duration',
     type=int,
     default=10,
@@ -81,7 +89,17 @@ def main():
     is_flag=True,
     help='Enable verbose output'
 )
-def analyze(format, output, with_zk_proofs, duration, listen_addr, connect_to, simulate, verbose):
+def analyze(
+    format,
+    output,
+    with_zk_proofs,
+    with_real_zk,
+    duration,
+    listen_addr,
+    connect_to,
+    simulate,
+    verbose
+):
     """
     Run privacy analysis on libp2p node.
     
@@ -236,11 +254,27 @@ def analyze(format, output, with_zk_proofs, duration, listen_addr, connect_to, s
         
         # Generate ZK proofs if requested
         zk_proofs = None
+        real_zk_proof = None
         if with_zk_proofs:
             if verbose:
                 click.echo("\nGenerating mock ZK proofs...")
             zk_proofs = _generate_zk_proofs(collector, verbose)
             click.echo(click.style(f"✓ Generated {sum(len(v) for v in zk_proofs.values())} ZK proofs", fg="green"))
+
+        if with_real_zk:
+            if verbose:
+                click.echo("\nGenerating real ZK proof (Pedersen+Schnorr)...")
+            real_zk_proof = generate_real_commitment_proof(collector)
+            if real_zk_proof.get("verified"):
+                click.echo(click.style("✓ Real ZK proof verified", fg="green"))
+            else:
+                error = real_zk_proof.get("error") or "unavailable"
+                click.echo(
+                    click.style(
+                        f"⚠️  Real ZK proof unavailable: {error}",
+                        fg="yellow",
+                    )
+                )
         
         # Generate report
         if verbose:
@@ -249,7 +283,12 @@ def analyze(format, output, with_zk_proofs, duration, listen_addr, connect_to, s
         report_gen = ReportGenerator()
         
         if format == 'console':
-            report_content = report_gen.generate_console_report(report, zk_proofs, verbose=verbose)
+            report_content = report_gen.generate_console_report(
+                report,
+                zk_proofs,
+                verbose=verbose,
+                real_zk_proof=real_zk_proof,
+            )
             if output:
                 Path(output).write_text(report_content)
                 click.echo(f"\n{click.style(f'✓ Report saved to: {output}', fg='green')}")
@@ -257,13 +296,21 @@ def analyze(format, output, with_zk_proofs, duration, listen_addr, connect_to, s
                 click.echo("\n" + report_content)
         
         elif format == 'json':
-            report_content = report_gen.generate_json_report(report, zk_proofs)
+            report_content = report_gen.generate_json_report(
+                report,
+                zk_proofs,
+                real_zk_proof=real_zk_proof,
+            )
             output_path = output or "privacy_report.json"
             Path(output_path).write_text(report_content)
             click.echo(f"\n{click.style(f'✓ JSON report saved to: {output_path}', fg='green')}")
             
         elif format == 'html':
-            report_content = report_gen.generate_html_report(report, zk_proofs)
+            report_content = report_gen.generate_html_report(
+                report,
+                zk_proofs,
+                real_zk_proof=real_zk_proof,
+            )
             output_path = output or "privacy_report.html"
             Path(output_path).write_text(report_content)
             click.echo(f"\n{click.style(f'✓ HTML report saved to: {output_path}', fg='green')}")
@@ -492,4 +539,3 @@ def _demo_anonymity_set(verbose: bool):
 
 if __name__ == "__main__":
     main()
-

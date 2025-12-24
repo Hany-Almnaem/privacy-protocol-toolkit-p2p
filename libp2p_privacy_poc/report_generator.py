@@ -8,7 +8,7 @@ Generates comprehensive privacy reports in various formats:
 """
 
 import json
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from libp2p_privacy_poc.privacy_analyzer import PrivacyReport, PrivacyRisk
 from libp2p_privacy_poc.mock_zk_proofs import MockZKProof
@@ -35,7 +35,8 @@ class ReportGenerator:
         self,
         report: PrivacyReport,
         zk_proofs: Optional[Dict[str, List[MockZKProof]]] = None,
-        verbose: bool = False
+        verbose: bool = False,
+        real_zk_proof: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Generate a console-friendly report.
@@ -124,6 +125,27 @@ class ReportGenerator:
                             lines.append(f"  • {proof.claim}")
                             lines.append(f"    Verified: {color_text('✓', 'green') if proof.verify() else color_text('✗', 'red')}")
         
+        if real_zk_proof is not None:
+            lines.append("")
+            lines.append("-" * 80)
+            lines.append(color_text("REAL ZK PROOFS (EXPERIMENTAL)", "cyan"))
+            lines.append("-" * 80)
+            lines.append(f"Backend: {real_zk_proof.get('backend', 'unknown')}")
+            lines.append(f"Statement: {real_zk_proof.get('statement', 'unknown')}")
+            peer_id = real_zk_proof.get("peer_id")
+            session_id = real_zk_proof.get("session_id")
+            if peer_id:
+                lines.append(f"Peer ID: {truncate_peer_id(peer_id)}")
+            if session_id:
+                lines.append(f"Session ID: {session_id}")
+            if real_zk_proof.get("verified"):
+                lines.append(f"Verified: {color_text('✓', 'green')}")
+            else:
+                lines.append(f"Verified: {color_text('✗', 'red')}")
+                error = real_zk_proof.get("error")
+                if error:
+                    lines.append(f"Error: {error}")
+
         # Recommendations
         if report.recommendations:
             lines.append("")
@@ -158,7 +180,8 @@ class ReportGenerator:
         self,
         report: PrivacyReport,
         zk_proofs: Optional[Dict[str, List[MockZKProof]]] = None,
-        certificate: Optional[dict] = None
+        certificate: Optional[dict] = None,
+        real_zk_proof: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Generate a JSON report.
@@ -182,6 +205,9 @@ class ReportGenerator:
                 proof_type: [p.to_dict() for p in proofs]
                 for proof_type, proofs in zk_proofs.items()
             }
+
+        if real_zk_proof is not None:
+            data["real_zk_proofs"] = [real_zk_proof]
         
         if certificate:
             data["privacy_certificate"] = certificate
@@ -197,7 +223,8 @@ class ReportGenerator:
     def generate_html_report(
         self,
         report: PrivacyReport,
-        zk_proofs: Optional[Dict[str, List[MockZKProof]]] = None
+        zk_proofs: Optional[Dict[str, List[MockZKProof]]] = None,
+        real_zk_proof: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Generate an HTML report.
@@ -329,6 +356,8 @@ class ReportGenerator:
         
         {self._generate_zk_proofs_html(zk_proofs) if zk_proofs else ''}
         
+        {self._generate_real_zk_proof_html(real_zk_proof) if real_zk_proof else ''}
+        
         <h2>Recommendations</h2>
         <ol>
             {self._generate_recommendations_html(report.recommendations)}
@@ -412,6 +441,34 @@ class ReportGenerator:
                 html += "</ul>"
         
         return html
+
+    def _generate_real_zk_proof_html(
+        self,
+        real_zk_proof: Optional[Dict[str, Any]],
+    ) -> str:
+        """Generate HTML for real ZK proof section."""
+        if real_zk_proof is None:
+            return ""
+
+        verified = "✓" if real_zk_proof.get("verified") else "✗"
+        error = real_zk_proof.get("error")
+        error_html = f"<p><strong>Error:</strong> {error}</p>" if error else ""
+
+        return f"""
+        <h2>Real ZK Proofs (Experimental)</h2>
+        <div class="warning">
+            <strong>Experimental</strong><br>
+            This section contains a real Pedersen+Schnorr commitment-opening proof.
+        </div>
+        <ul>
+            <li><strong>Backend:</strong> {real_zk_proof.get('backend', 'unknown')}</li>
+            <li><strong>Statement:</strong> {real_zk_proof.get('statement', 'unknown')}</li>
+            <li><strong>Peer ID:</strong> {real_zk_proof.get('peer_id', '')}</li>
+            <li><strong>Session ID:</strong> {real_zk_proof.get('session_id', '')}</li>
+            <li><strong>Verified:</strong> {verified}</li>
+        </ul>
+        {error_html}
+        """
     
     def _generate_recommendations_html(self, recommendations: List[str]) -> str:
         """Generate HTML for recommendations."""
@@ -419,4 +476,3 @@ class ReportGenerator:
             return "<li>No specific recommendations at this time.</li>"
         
         return "\n".join(f"<li>{rec}</li>" for rec in recommendations[:10])
-
