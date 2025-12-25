@@ -112,6 +112,7 @@ class ZKProofType(Enum):
     
     ANONYMITY_SET_MEMBERSHIP = "anonymity_set_membership"
     COMMITMENT_OPENING_POK = "commitment_opening_pok"
+    PEDERSEN_OPENING = "commitment_opening_pok"
     SESSION_UNLINKABILITY = "session_unlinkability"
     RANGE_PROOF = "range_proof"
     TIMING_INDEPENDENCE = "timing_independence"
