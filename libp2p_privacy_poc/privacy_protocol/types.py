@@ -351,7 +351,9 @@ class ZKProof:
         try:
             data = {
                 "v": PROOF_VERSION,  # Version field for compatibility
-                "t": self.proof_type,
+                "t": self.proof_type.value
+                if hasattr(self.proof_type, "value")
+                else self.proof_type,
                 "c": self.commitment,
                 "ch": self.challenge,
                 "r": self.response,
@@ -404,8 +406,15 @@ class ZKProof:
         if "t" not in obj or "c" not in obj:
             raise ValueError("Invalid proof format: missing required fields")
         
+        proof_type = obj["t"]
+        if isinstance(proof_type, str):
+            try:
+                proof_type = ZKProofType(proof_type)
+            except ValueError:
+                pass
+
         return cls(
-            proof_type=obj["t"],
+            proof_type=proof_type,
             commitment=obj["c"],
             challenge=obj.get("ch"),
             response=obj.get("r"),
