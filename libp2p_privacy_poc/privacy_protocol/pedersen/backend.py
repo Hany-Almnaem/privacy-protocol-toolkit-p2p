@@ -404,6 +404,51 @@ class PedersenBackend(CommitmentOpeningBackend):
         )
         return _verify(proof)
 
+    def generate_continuity_proof(
+        self,
+        identity_scalar: Bn,
+        blinding_1: Bn,
+        blinding_2: Bn,
+        context: ProofContext,
+    ) -> ZKProof:
+        """
+        Generate identity continuity proof (Phase 2B).
+
+        Args:
+            identity_scalar: Shared identity scalar across both commitments
+            blinding_1: Blinding for first commitment
+            blinding_2: Blinding for second commitment
+            context: Proof context
+
+        Returns:
+            ZKProof with continuity statement
+
+        Note:
+            This proves C1 and C2 share the same identity scalar
+            without revealing the identity or blindings.
+        """
+        from .continuity import (
+            generate_continuity_proof as _gen,
+        )
+
+        ctx_hash = hashlib.sha256(context.to_bytes()).digest()
+
+        return _gen(
+            identity_scalar=identity_scalar,
+            blinding_1=blinding_1,
+            blinding_2=blinding_2,
+            ctx_hash=ctx_hash,
+        )
+
+    def verify_continuity_proof(self, proof: ZKProof) -> bool:
+        """
+        Verify identity continuity proof (Phase 2B).
+        """
+        from .continuity import (
+            verify_continuity_proof as _verify,
+        )
+        return _verify(proof)
+
     def batch_verify(self, proofs: List[ZKProof]) -> bool:
         """
         Batch verify multiple proofs (sequential for now).
