@@ -10,8 +10,10 @@ This backend composes:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import hashlib
+
+from petlib.bn import Bn
 
 from .commitments import CurveParameters, commit, get_cached_curve_params
 from .schnorr import generate_schnorr_pok, verify_schnorr_pok
@@ -323,6 +325,129 @@ class PedersenBackend(CommitmentOpeningBackend):
 
         except Exception:
             return False
+
+    def generate_membership_proof(
+        self,
+        identity_scalar: Bn,
+        blinding: Bn,
+        merkle_path: List[Tuple[bytes, bool]],
+        root: bytes,
+        context: ProofContext,
+    ) -> ZKProof:
+        """
+        Generate anonymity set membership proof (Phase 2B).
+
+        This is a thin wrapper around membership.py implementation.
+        """
+        from .membership import (
+            generate_membership_proof as _gen,
+        )
+
+        ctx_hash = hashlib.sha256(context.to_bytes()).digest()
+
+        return _gen(
+            identity_scalar=identity_scalar,
+            blinding=blinding,
+            merkle_path=merkle_path,
+            root=root,
+            ctx_hash=ctx_hash,
+        )
+
+    def verify_membership_proof(self, proof: ZKProof) -> bool:
+        """
+        Verify anonymity set membership proof (Phase 2B).
+        """
+        from .membership import (
+            verify_membership_proof as _verify,
+        )
+        return _verify(proof)
+
+    def generate_unlinkability_proof(
+        self,
+        identity_scalar: Bn,
+        blinding: Bn,
+        context: ProofContext,
+    ) -> ZKProof:
+        """
+        Generate session unlinkability proof (Phase 2B).
+
+        Args:
+            identity_scalar: Secret identity scalar
+            blinding: Fresh blinding for this session (must be unique)
+            context: Proof context (contains session/topic info)
+
+        Returns:
+            ZKProof with unlinkability statement
+
+        Note:
+            Caller is responsible for generating fresh blinding per session.
+            Reusing blinding across sessions breaks unlinkability.
+        """
+        from .unlinkability import (
+            generate_unlinkability_proof as _gen,
+        )
+
+        ctx_hash = hashlib.sha256(context.to_bytes()).digest()
+
+        return _gen(
+            identity_scalar=identity_scalar,
+            blinding=blinding,
+            ctx_hash=ctx_hash,
+        )
+
+    def verify_unlinkability_proof(self, proof: ZKProof) -> bool:
+        """
+        Verify session unlinkability proof (Phase 2B).
+        """
+        from .unlinkability import (
+            verify_unlinkability_proof as _verify,
+        )
+        return _verify(proof)
+
+    def generate_continuity_proof(
+        self,
+        identity_scalar: Bn,
+        blinding_1: Bn,
+        blinding_2: Bn,
+        context: ProofContext,
+    ) -> ZKProof:
+        """
+        Generate identity continuity proof (Phase 2B).
+
+        Args:
+            identity_scalar: Shared identity scalar across both commitments
+            blinding_1: Blinding for first commitment
+            blinding_2: Blinding for second commitment
+            context: Proof context
+
+        Returns:
+            ZKProof with continuity statement
+
+        Note:
+            This proves C1 and C2 share the same identity scalar
+            without revealing the identity or blindings.
+        """
+        from .continuity import (
+            generate_continuity_proof as _gen,
+        )
+
+        ctx_hash = hashlib.sha256(context.to_bytes()).digest()
+
+        return _gen(
+            identity_scalar=identity_scalar,
+            blinding_1=blinding_1,
+            blinding_2=blinding_2,
+            ctx_hash=ctx_hash,
+        )
+
+    def verify_continuity_proof(self, proof: ZKProof) -> bool:
+        """
+        Verify identity continuity proof (Phase 2B).
+        """
+        from .continuity import (
+            verify_continuity_proof as _verify,
+        )
+        return _verify(proof)
 
     def batch_verify(self, proofs: List[ZKProof]) -> bool:
         """

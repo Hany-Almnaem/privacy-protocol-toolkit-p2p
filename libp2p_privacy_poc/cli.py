@@ -22,6 +22,7 @@ from libp2p_privacy_poc.report_generator import ReportGenerator
 from libp2p_privacy_poc.zk_integration import (
     ZKDataPreparator,
     generate_real_commitment_proof,
+    generate_real_phase2b_proofs,
 )
 
 
@@ -62,6 +63,11 @@ def main():
     help='Include real Pedersen+Schnorr proof (experimental)'
 )
 @click.option(
+    '--with-real-phase2b',
+    is_flag=True,
+    help='Include real Phase 2B proofs (experimental)'
+)
+@click.option(
     '--duration',
     type=int,
     default=10,
@@ -94,6 +100,7 @@ def analyze(
     output,
     with_zk_proofs,
     with_real_zk,
+    with_real_phase2b,
     duration,
     listen_addr,
     connect_to,
@@ -255,6 +262,7 @@ def analyze(
         # Generate ZK proofs if requested
         zk_proofs = None
         real_zk_proof = None
+        real_phase2b_proofs = None
         if with_zk_proofs:
             if verbose:
                 click.echo("\nGenerating mock ZK proofs...")
@@ -275,12 +283,35 @@ def analyze(
                         fg="yellow",
                     )
                 )
+
+        if with_real_phase2b:
+            if verbose:
+                click.echo("\nGenerating real Phase 2B proofs (experimental)...")
+            real_phase2b_proofs = generate_real_phase2b_proofs(collector)
+            verified_count = sum(
+                1 for item in real_phase2b_proofs if item.get("verified")
+            )
+            if verified_count:
+                click.echo(
+                    click.style(
+                        f"✓ Real Phase 2B proofs verified: {verified_count}/{len(real_phase2b_proofs)}",
+                        fg="green",
+                    )
+                )
+            else:
+                click.echo(
+                    click.style(
+                        "⚠️  Real Phase 2B proofs unavailable",
+                        fg="yellow",
+                    )
+                )
         
         # Generate report
         if verbose:
             click.echo(f"\nGenerating {format} report...")
         
         report_gen = ReportGenerator()
+        data_source = "SIMULATED" if simulate else "REAL"
         
         if format == 'console':
             report_content = report_gen.generate_console_report(
@@ -288,6 +319,8 @@ def analyze(
                 zk_proofs,
                 verbose=verbose,
                 real_zk_proof=real_zk_proof,
+                real_phase2b_proofs=real_phase2b_proofs,
+                data_source=data_source,
             )
             if output:
                 Path(output).write_text(report_content)
@@ -300,6 +333,8 @@ def analyze(
                 report,
                 zk_proofs,
                 real_zk_proof=real_zk_proof,
+                real_phase2b_proofs=real_phase2b_proofs,
+                data_source=data_source,
             )
             output_path = output or "privacy_report.json"
             Path(output_path).write_text(report_content)
@@ -310,6 +345,8 @@ def analyze(
                 report,
                 zk_proofs,
                 real_zk_proof=real_zk_proof,
+                real_phase2b_proofs=real_phase2b_proofs,
+                data_source=data_source,
             )
             output_path = output or "privacy_report.html"
             Path(output_path).write_text(report_content)

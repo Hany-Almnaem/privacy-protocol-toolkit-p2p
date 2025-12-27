@@ -37,6 +37,8 @@ class ReportGenerator:
         zk_proofs: Optional[Dict[str, List[MockZKProof]]] = None,
         verbose: bool = False,
         real_zk_proof: Optional[Dict[str, Any]] = None,
+        real_phase2b_proofs: Optional[List[Dict[str, Any]]] = None,
+        data_source: Optional[str] = None,
     ) -> str:
         """
         Generate a console-friendly report.
@@ -58,6 +60,8 @@ class ReportGenerator:
         lines.append("=" * 80)
         lines.append(f"Report ID: {self.report_id}")
         lines.append(f"Timestamp: {format_timestamp(report.timestamp)}")
+        if data_source:
+            lines.append(f"Data Source: {data_source}")
         lines.append("")
         
         # Overall risk score
@@ -125,26 +129,40 @@ class ReportGenerator:
                             lines.append(f"  • {proof.claim}")
                             lines.append(f"    Verified: {color_text('✓', 'green') if proof.verify() else color_text('✗', 'red')}")
         
-        if real_zk_proof is not None:
+        if real_zk_proof is not None or real_phase2b_proofs:
             lines.append("")
             lines.append("-" * 80)
             lines.append(color_text("REAL ZK PROOFS (EXPERIMENTAL)", "cyan"))
             lines.append("-" * 80)
-            lines.append(f"Backend: {real_zk_proof.get('backend', 'unknown')}")
-            lines.append(f"Statement: {real_zk_proof.get('statement', 'unknown')}")
-            peer_id = real_zk_proof.get("peer_id")
-            session_id = real_zk_proof.get("session_id")
-            if peer_id:
-                lines.append(f"Peer ID: {truncate_peer_id(peer_id)}")
-            if session_id:
-                lines.append(f"Session ID: {session_id}")
-            if real_zk_proof.get("verified"):
-                lines.append(f"Verified: {color_text('✓', 'green')}")
-            else:
-                lines.append(f"Verified: {color_text('✗', 'red')}")
-                error = real_zk_proof.get("error")
-                if error:
-                    lines.append(f"Error: {error}")
+            if real_zk_proof is not None:
+                lines.append(f"Backend: {real_zk_proof.get('backend', 'unknown')}")
+                lines.append(f"Statement: {real_zk_proof.get('statement', 'unknown')}")
+                peer_id = real_zk_proof.get("peer_id")
+                session_id = real_zk_proof.get("session_id")
+                if peer_id:
+                    lines.append(f"Peer ID: {truncate_peer_id(peer_id)}")
+                if session_id:
+                    lines.append(f"Session ID: {session_id}")
+                if real_zk_proof.get("verified"):
+                    lines.append(f"Verified: {color_text('✓', 'green')}")
+                else:
+                    lines.append(f"Verified: {color_text('✗', 'red')}")
+                    error = real_zk_proof.get("error")
+                    if error:
+                        lines.append(f"Error: {error}")
+
+            if real_phase2b_proofs:
+                if real_zk_proof is not None:
+                    lines.append("")
+                lines.append("Phase 2B Statements:")
+                for proof in real_phase2b_proofs:
+                    statement = proof.get("statement", "unknown")
+                    verified = proof.get("verified")
+                    status = color_text("✓", "green") if verified else color_text("✗", "red")
+                    lines.append(f"  - {statement}: {status}")
+                    error = proof.get("error")
+                    if not verified and error:
+                        lines.append(f"    Error: {error}")
 
         # Recommendations
         if report.recommendations:
@@ -182,6 +200,8 @@ class ReportGenerator:
         zk_proofs: Optional[Dict[str, List[MockZKProof]]] = None,
         certificate: Optional[dict] = None,
         real_zk_proof: Optional[Dict[str, Any]] = None,
+        real_phase2b_proofs: Optional[List[Dict[str, Any]]] = None,
+        data_source: Optional[str] = None,
     ) -> str:
         """
         Generate a JSON report.
@@ -199,6 +219,8 @@ class ReportGenerator:
             "timestamp": report.timestamp,
             "privacy_report": report.to_dict(),
         }
+        if data_source:
+            data["data_source"] = data_source
         
         if zk_proofs:
             data["zk_proofs"] = {
@@ -208,6 +230,9 @@ class ReportGenerator:
 
         if real_zk_proof is not None:
             data["real_zk_proofs"] = [real_zk_proof]
+
+        if real_phase2b_proofs:
+            data["real_phase2b_proofs"] = real_phase2b_proofs
         
         if certificate:
             data["privacy_certificate"] = certificate
@@ -225,6 +250,8 @@ class ReportGenerator:
         report: PrivacyReport,
         zk_proofs: Optional[Dict[str, List[MockZKProof]]] = None,
         real_zk_proof: Optional[Dict[str, Any]] = None,
+        real_phase2b_proofs: Optional[List[Dict[str, Any]]] = None,
+        data_source: Optional[str] = None,
     ) -> str:
         """
         Generate an HTML report.
@@ -334,6 +361,7 @@ class ReportGenerator:
         <h1>Privacy Analysis Report</h1>
         <p><strong>Report ID:</strong> {self.report_id}</p>
         <p><strong>Generated:</strong> {format_timestamp(report.timestamp)}</p>
+        {f"<p><strong>Data Source:</strong> {data_source}</p>" if data_source else ""}
         
         <div class="warning">
             <strong>⚠️ PROOF OF CONCEPT</strong><br>
@@ -356,7 +384,7 @@ class ReportGenerator:
         
         {self._generate_zk_proofs_html(zk_proofs) if zk_proofs else ''}
         
-        {self._generate_real_zk_proof_html(real_zk_proof) if real_zk_proof else ''}
+        {self._generate_real_zk_proof_html(real_zk_proof, real_phase2b_proofs)}
         
         <h2>Recommendations</h2>
         <ol>
@@ -445,29 +473,53 @@ class ReportGenerator:
     def _generate_real_zk_proof_html(
         self,
         real_zk_proof: Optional[Dict[str, Any]],
+        real_phase2b_proofs: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """Generate HTML for real ZK proof section."""
-        if real_zk_proof is None:
+        if real_zk_proof is None and not real_phase2b_proofs:
             return ""
 
-        verified = "✓" if real_zk_proof.get("verified") else "✗"
-        error = real_zk_proof.get("error")
-        error_html = f"<p><strong>Error:</strong> {error}</p>" if error else ""
+        proof_items = ""
+        if real_zk_proof is not None:
+            verified = "✓" if real_zk_proof.get("verified") else "✗"
+            error = real_zk_proof.get("error")
+            error_html = f"<p><strong>Error:</strong> {error}</p>" if error else ""
+            proof_items = f"""
+            <h3>Commitment Opening Proof</h3>
+            <ul>
+                <li><strong>Backend:</strong> {real_zk_proof.get('backend', 'unknown')}</li>
+                <li><strong>Statement:</strong> {real_zk_proof.get('statement', 'unknown')}</li>
+                <li><strong>Peer ID:</strong> {real_zk_proof.get('peer_id', '')}</li>
+                <li><strong>Session ID:</strong> {real_zk_proof.get('session_id', '')}</li>
+                <li><strong>Verified:</strong> {verified}</li>
+            </ul>
+            {error_html}
+            """
+
+        phase2b_items = ""
+        if real_phase2b_proofs:
+            rows = []
+            for proof in real_phase2b_proofs:
+                statement = proof.get("statement", "unknown")
+                verified = "✓" if proof.get("verified") else "✗"
+                error = proof.get("error")
+                error_html = f" <span>(Error: {error})</span>" if error and not proof.get("verified") else ""
+                rows.append(f"<li><strong>{statement}:</strong> {verified}{error_html}</li>")
+            phase2b_items = f"""
+            <h3>Phase 2B Statements</h3>
+            <ul>
+                {''.join(rows)}
+            </ul>
+            """
 
         return f"""
         <h2>Real ZK Proofs (Experimental)</h2>
         <div class="warning">
             <strong>Experimental</strong><br>
-            This section contains a real Pedersen+Schnorr commitment-opening proof.
+            This section contains real Phase 2A and Phase 2B proofs.
         </div>
-        <ul>
-            <li><strong>Backend:</strong> {real_zk_proof.get('backend', 'unknown')}</li>
-            <li><strong>Statement:</strong> {real_zk_proof.get('statement', 'unknown')}</li>
-            <li><strong>Peer ID:</strong> {real_zk_proof.get('peer_id', '')}</li>
-            <li><strong>Session ID:</strong> {real_zk_proof.get('session_id', '')}</li>
-            <li><strong>Verified:</strong> {verified}</li>
-        </ul>
-        {error_html}
+        {proof_items}
+        {phase2b_items}
         """
     
     def _generate_recommendations_html(self, recommendations: List[str]) -> str:

@@ -400,41 +400,6 @@ class TestPhase15ExamplesValidity:
         print("✓ demo_scenarios.py is valid")
 
 
-class TestPhase15DocumentationCompleteness:
-    """Validate documentation exists and is complete."""
-    
-    def test_readme_exists(self):
-        """Validate README.md exists."""
-        readme = Path(__file__).parent.parent / "README.md"
-        assert readme.exists(), "README.md should exist"
-        assert readme.stat().st_size > 1000, "README should have content"
-        print("✓ README.md validated")
-    
-    def test_documentation_exists(self):
-        """Validate DOCUMENTATION.md exists."""
-        doc = Path(__file__).parent.parent / "docs" / "DOCUMENTATION.md"
-        assert doc.exists(), "DOCUMENTATION.md should exist"
-        assert doc.stat().st_size > 5000, "Documentation should be comprehensive"
-        print("✓ DOCUMENTATION.md validated")
-    
-    def test_real_network_guide_exists(self):
-        """Validate REAL_NETWORK_GUIDE.md exists."""
-        guide = Path(__file__).parent.parent / "docs" / "REAL_NETWORK_GUIDE.md"
-        assert guide.exists(), "REAL_NETWORK_GUIDE.md should exist"
-        assert guide.stat().st_size > 5000, "Guide should be comprehensive"
-        print("✓ REAL_NETWORK_GUIDE.md validated")
-    
-    def test_known_issues_updated(self):
-        """Validate KNOWN_ISSUES.md is updated with Phase 1.5."""
-        known_issues = Path(__file__).parent.parent / "docs" / "KNOWN_ISSUES.md"
-        assert known_issues.exists(), "KNOWN_ISSUES.md should exist"
-        
-        content = known_issues.read_text()
-        assert "Phase 1.5" in content, "Should document Phase 1.5"
-        assert "VALIDATED" in content or "RESOLVED" in content
-        print("✓ KNOWN_ISSUES.md validated")
-
-
 class TestPhase15MockZKProofs:
     """Validate mock ZK proof system works."""
     

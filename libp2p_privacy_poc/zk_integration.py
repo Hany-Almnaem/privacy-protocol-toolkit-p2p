@@ -417,6 +417,64 @@ class ZKIntegrationInterface:
         }
 
 
+_PHASE2B_PEER_ID_DOMAIN = b"LIBP2P_PRIVACY_PEER_ID_SCALAR_V1"
+_PHASE2B_BLINDING_DOMAIN = b"LIBP2P_PRIVACY_PHASE2B_BLINDING_V1"
+
+
+def _collect_peer_ids(collector) -> List[str]:
+    peer_ids = set()
+    if getattr(collector, "peers", None):
+        peer_ids.update(collector.peers.keys())
+    if getattr(collector, "connections", None):
+        peer_ids.update(meta.peer_id for meta in collector.connections.values())
+    if getattr(collector, "connection_history", None):
+        peer_ids.update(meta.peer_id for meta in collector.connection_history)
+    return sorted(peer_ids)
+
+
+def _select_session_id(collector, peer_id: str) -> str:
+    session_id = None
+    if getattr(collector, "active_sessions", None):
+        matching = sorted(
+            sid for sid in collector.active_sessions
+            if sid.startswith(f"{peer_id}_")
+        )
+        if matching:
+            session_id = matching[0]
+        else:
+            session_id = sorted(collector.active_sessions)[0]
+
+    if session_id is None and getattr(collector, "connections", None):
+        matching = sorted(
+            sid for sid, meta in collector.connections.items()
+            if meta.peer_id == peer_id
+        )
+        if matching:
+            session_id = matching[0]
+
+    if session_id is None:
+        timestamps = []
+        if getattr(collector, "connections", None):
+            timestamps.extend(
+                meta.timestamp_start
+                for meta in collector.connections.values()
+                if meta.peer_id == peer_id
+            )
+        if getattr(collector, "connection_history", None):
+            timestamps.extend(
+                meta.timestamp_start
+                for meta in collector.connection_history
+                if meta.peer_id == peer_id
+            )
+        peer_meta = getattr(collector, "peers", {}).get(peer_id)
+        if peer_meta is not None:
+            timestamps.append(getattr(peer_meta, "first_seen", 0))
+        timestamp = min(timestamps) if timestamps else 0
+        session_id = f"{peer_id}:{int(timestamp)}"
+
+    return session_id
+
+
 def generate_real_commitment_proof(collector) -> Dict[str, Any]:
     """
     Generate and verify a real Pedersen+Schnorr commitment-opening proof.
@@ -518,3 +576,198 @@ def generate_real_commitment_proof(collector) -> Dict[str, Any]:
         result["error"] = str(exc)
         print(f"Warning: real ZK proof unavailable: {exc}")
         return result
+
+
+def generate_real_phase2b_proofs(collector) -> List[Dict[str, Any]]:
+    """
+    Generate and verify Phase 2B proofs (membership, unlinkability, continuity).
+
+    Returns a list of proof result dicts. On failure, each result includes
+    verified=False and an error message without raising.
+    """
+    statement_order = [
+        "anon_set_membership_v1",
+        "session_unlinkability_v1",
+        "identity_continuity_v1",
+    ]
+    results: List[Dict[str, Any]] = []
+
+    def _new_result(statement: str) -> Dict[str, Any]:
+        return {
+            "backend": "pedersen",
+            "statement": statement,
+            "peer_id": None,
+            "session_id": None,
+            "verified": False,
+            "error": None,
+        }
+
+    try:
+        if collector is None:
+            raise ValueError("collector is required")
+
+        peer_ids = _collect_peer_ids(collector)
+        if not peer_ids:
+            raise ValueError("no peers available for Phase 2B proofs")
+
+        peer_id = peer_ids[0]
+        session_id = _select_session_id(collector, peer_id)
+
+        from petlib.bn import Bn
+
+        from libp2p_privacy_poc.privacy_protocol.factory import get_zk_backend
+        from libp2p_privacy_poc.privacy_protocol.merkle import (
+            hash_leaf,
+            build_tree,
+            DOMAIN_SEPARATORS_2B,
+        )
+        from libp2p_privacy_poc.privacy_protocol.pedersen import membership as membership_module
+        from libp2p_privacy_poc.privacy_protocol.statements import StatementType
+        from libp2p_privacy_poc.privacy_protocol.types import ProofContext
+
+        backend = get_zk_backend(prefer="pedersen")
+        required_methods = (
+            "generate_membership_proof",
+            "verify_membership_proof",
+            "generate_unlinkability_proof",
+            "verify_unlinkability_proof",
+            "generate_continuity_proof",
+            "verify_continuity_proof",
+        )
+        for method in required_methods:
+            if not hasattr(backend, method):
+                raise AttributeError(f"backend missing {method}")
+
+        order = membership_module.order
+        g = membership_module.g
+        h = membership_module.h
+
+        def _derive_scalar(domain_sep: bytes, label: str) -> Bn:
+            digest = hashlib.sha256(domain_sep + label.encode("utf-8")).digest()
+            scalar = Bn.from_binary(digest) % order
+            if int(scalar) == 0:
+                scalar = Bn.from_num(1)
+            return scalar
+
+        identity_scalars = {
+            pid: _derive_scalar(_PHASE2B_PEER_ID_DOMAIN, pid)
+            for pid in peer_ids
+        }
+        blinding_membership = {
+            pid: _derive_scalar(_PHASE2B_BLINDING_DOMAIN, f"{pid}:membership")
+            for pid in peer_ids
+        }
+
+        commitments = [
+            ((identity_scalars[pid] * g) + (blinding_membership[pid] * h)).export()
+            for pid in peer_ids
+        ]
+        leaves = [
+            hash_leaf(DOMAIN_SEPARATORS_2B["merkle_leaf"], commitment)
+            for commitment in commitments
+        ]
+        root, paths = build_tree(leaves)
+        index = peer_ids.index(peer_id)
+        merkle_path = paths[index]
+
+        def _context(statement: str) -> ProofContext:
+            return ProofContext(
+                peer_id=peer_id,
+                session_id=session_id,
+                metadata={"source": "real_phase2b_integration", "statement": statement},
+                timestamp=0.0,
+            )
+
+        membership_ctx = _context(StatementType.ANON_SET_MEMBERSHIP.value)
+        unlinkability_ctx = _context(StatementType.SESSION_UNLINKABILITY.value)
+        continuity_ctx = _context(StatementType.IDENTITY_CONTINUITY.value)
+
+        membership_blinding = blinding_membership[peer_id]
+        unlinkability_blinding = _derive_scalar(
+            _PHASE2B_BLINDING_DOMAIN, f"{peer_id}:unlinkability"
+        )
+        continuity_blinding_1 = _derive_scalar(
+            _PHASE2B_BLINDING_DOMAIN, f"{peer_id}:continuity_1"
+        )
+        continuity_blinding_2 = _derive_scalar(
+            _PHASE2B_BLINDING_DOMAIN, f"{peer_id}:continuity_2"
+        )
+
+        def _finalize(result: Dict[str, Any], verified: bool) -> Dict[str, Any]:
+            result["peer_id"] = peer_id
+            result["session_id"] = session_id
+            result["verified"] = bool(verified)
+            return result
+
+        # Membership proof
+        result = _new_result(StatementType.ANON_SET_MEMBERSHIP.value)
+        try:
+            proof = backend.generate_membership_proof(
+                identity_scalar=identity_scalars[peer_id],
+                blinding=membership_blinding,
+                merkle_path=merkle_path,
+                root=root,
+                context=membership_ctx,
+            )
+            verified = backend.verify_membership_proof(proof)
+            results.append(_finalize(result, verified))
+        except Exception as exc:
+            result["peer_id"] = peer_id
+            result["session_id"] = session_id
+            result["error"] = str(exc)
+            results.append(result)
+            print(
+                "Warning: real Phase 2B membership proof unavailable: "
+                f"{exc}"
+            )
+
+        # Unlinkability proof
+        result = _new_result(StatementType.SESSION_UNLINKABILITY.value)
+        try:
+            proof = backend.generate_unlinkability_proof(
+                identity_scalar=identity_scalars[peer_id],
+                blinding=unlinkability_blinding,
+                context=unlinkability_ctx,
+            )
+            verified = backend.verify_unlinkability_proof(proof)
+            results.append(_finalize(result, verified))
+        except Exception as exc:
+            result["peer_id"] = peer_id
+            result["session_id"] = session_id
+            result["error"] = str(exc)
+            results.append(result)
+            print(
+                "Warning: real Phase 2B unlinkability proof unavailable: "
+                f"{exc}"
+            )
+
+        # Continuity proof
+        result = _new_result(StatementType.IDENTITY_CONTINUITY.value)
+        try:
+            proof = backend.generate_continuity_proof(
+                identity_scalar=identity_scalars[peer_id],
+                blinding_1=continuity_blinding_1,
+                blinding_2=continuity_blinding_2,
+                context=continuity_ctx,
+            )
+            verified = backend.verify_continuity_proof(proof)
+            results.append(_finalize(result, verified))
+        except Exception as exc:
+            result["peer_id"] = peer_id
+            result["session_id"] = session_id
+            result["error"] = str(exc)
+            results.append(result)
+            print(
+                "Warning: real Phase 2B continuity proof unavailable: "
+                f"{exc}"
+            )
+
+        return results
+
+    except Exception as exc:
+        for statement in statement_order:
+            result = _new_result(statement)
+            result["error"] = str(exc)
+            results.append(result)
+        print(f"Warning: real Phase 2B proofs unavailable: {exc}")
+        return results
