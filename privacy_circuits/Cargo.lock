@@ -275,6 +275,37 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "continuity"
+version = "0.1.0"
+dependencies = [
+ "ark-bn254",
+ "ark-ec",
+ "ark-ff",
+ "ark-groth16",
+ "ark-r1cs-std",
+ "ark-relations",
+ "ark-serialize",
+ "ark-sponge",
+ "ark-std",
+ "bincode",
+ "membership",
+ "serde",
+ "serde_bytes",
+]
+
+[[package]]
+name = "continuity_py"
+version = "0.1.0"
+dependencies = [
+ "ark-bn254",
+ "ark-groth16",
+ "ark-serialize",
+ "bincode",
+ "continuity",
+ "pyo3",
+]
+
+[[package]]
 name = "cpufeatures"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
