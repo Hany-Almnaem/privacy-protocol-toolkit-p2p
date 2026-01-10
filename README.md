@@ -23,12 +23,15 @@ pip install -e .
 # Simulated analysis with real proofs enabled
 libp2p-privacy analyze --simulate --with-zk-proofs --with-real-zk --with-real-phase2b --format console
 
+# Simulated analysis with SNARK membership verification (experimental)
+libp2p-privacy analyze --simulate --zk-backend snark-membership --format console
+
 # Real network analysis (add a second node to connect)
 libp2p-privacy analyze --duration 10 --with-zk-proofs --with-real-phase2b --format console
 ```
 
 ## Notes
-- No SNARK integration yet; proofs are Sigma-style and verified sequentially.
+- SNARK membership verification is available (experimental); full SNARK migration is pending.
 - No batching/aggregation beyond sequential verification.
 - No production security claims; prototype only.
 - Range proofs and timing-independence proofs are mock until Phase 2C.

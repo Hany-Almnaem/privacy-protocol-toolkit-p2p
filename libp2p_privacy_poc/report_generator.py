@@ -38,6 +38,7 @@ class ReportGenerator:
         verbose: bool = False,
         real_zk_proof: Optional[Dict[str, Any]] = None,
         real_phase2b_proofs: Optional[List[Dict[str, Any]]] = None,
+        snark_phase2b_proofs: Optional[List[Dict[str, Any]]] = None,
         data_source: Optional[str] = None,
     ) -> str:
         """
@@ -129,7 +130,7 @@ class ReportGenerator:
                             lines.append(f"  • {proof.claim}")
                             lines.append(f"    Verified: {color_text('✓', 'green') if proof.verify() else color_text('✗', 'red')}")
         
-        if real_zk_proof is not None or real_phase2b_proofs:
+        if real_zk_proof is not None or real_phase2b_proofs or snark_phase2b_proofs:
             lines.append("")
             lines.append("-" * 80)
             lines.append(color_text("REAL ZK PROOFS (EXPERIMENTAL)", "cyan"))
@@ -156,6 +157,19 @@ class ReportGenerator:
                     lines.append("")
                 lines.append("Phase 2B Statements:")
                 for proof in real_phase2b_proofs:
+                    statement = proof.get("statement", "unknown")
+                    verified = proof.get("verified")
+                    status = color_text("✓", "green") if verified else color_text("✗", "red")
+                    lines.append(f"  - {statement}: {status}")
+                    error = proof.get("error")
+                    if not verified and error:
+                        lines.append(f"    Error: {error}")
+
+            if snark_phase2b_proofs:
+                if real_zk_proof is not None or real_phase2b_proofs:
+                    lines.append("")
+                lines.append("Phase 2B Statements (SNARK):")
+                for proof in snark_phase2b_proofs:
                     statement = proof.get("statement", "unknown")
                     verified = proof.get("verified")
                     status = color_text("✓", "green") if verified else color_text("✗", "red")
@@ -201,6 +215,7 @@ class ReportGenerator:
         certificate: Optional[dict] = None,
         real_zk_proof: Optional[Dict[str, Any]] = None,
         real_phase2b_proofs: Optional[List[Dict[str, Any]]] = None,
+        snark_phase2b_proofs: Optional[List[Dict[str, Any]]] = None,
         data_source: Optional[str] = None,
     ) -> str:
         """
@@ -233,6 +248,9 @@ class ReportGenerator:
 
         if real_phase2b_proofs:
             data["real_phase2b_proofs"] = real_phase2b_proofs
+
+        if snark_phase2b_proofs:
+            data["snark_phase2b_proofs"] = snark_phase2b_proofs
         
         if certificate:
             data["privacy_certificate"] = certificate
@@ -251,6 +269,7 @@ class ReportGenerator:
         zk_proofs: Optional[Dict[str, List[MockZKProof]]] = None,
         real_zk_proof: Optional[Dict[str, Any]] = None,
         real_phase2b_proofs: Optional[List[Dict[str, Any]]] = None,
+        snark_phase2b_proofs: Optional[List[Dict[str, Any]]] = None,
         data_source: Optional[str] = None,
     ) -> str:
         """
@@ -384,7 +403,7 @@ class ReportGenerator:
         
         {self._generate_zk_proofs_html(zk_proofs) if zk_proofs else ''}
         
-        {self._generate_real_zk_proof_html(real_zk_proof, real_phase2b_proofs)}
+        {self._generate_real_zk_proof_html(real_zk_proof, real_phase2b_proofs, snark_phase2b_proofs)}
         
         <h2>Recommendations</h2>
         <ol>
@@ -474,9 +493,10 @@ class ReportGenerator:
         self,
         real_zk_proof: Optional[Dict[str, Any]],
         real_phase2b_proofs: Optional[List[Dict[str, Any]]] = None,
+        snark_phase2b_proofs: Optional[List[Dict[str, Any]]] = None,
     ) -> str:
         """Generate HTML for real ZK proof section."""
-        if real_zk_proof is None and not real_phase2b_proofs:
+        if real_zk_proof is None and not real_phase2b_proofs and not snark_phase2b_proofs:
             return ""
 
         proof_items = ""
@@ -512,6 +532,22 @@ class ReportGenerator:
             </ul>
             """
 
+        snark_items = ""
+        if snark_phase2b_proofs:
+            rows = []
+            for proof in snark_phase2b_proofs:
+                statement = proof.get("statement", "unknown")
+                verified = "✓" if proof.get("verified") else "✗"
+                error = proof.get("error")
+                error_html = f" <span>(Error: {error})</span>" if error and not proof.get("verified") else ""
+                rows.append(f"<li><strong>{statement}:</strong> {verified}{error_html}</li>")
+            snark_items = f"""
+            <h3>Phase 2B Statements (SNARK)</h3>
+            <ul>
+                {''.join(rows)}
+            </ul>
+            """
+
         return f"""
         <h2>Real ZK Proofs (Experimental)</h2>
         <div class="warning">
@@ -520,6 +556,7 @@ class ReportGenerator:
         </div>
         {proof_items}
         {phase2b_items}
+        {snark_items}
         """
     
     def _generate_recommendations_html(self, recommendations: List[str]) -> str:

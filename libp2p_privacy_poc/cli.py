@@ -23,6 +23,7 @@ from libp2p_privacy_poc.zk_integration import (
     ZKDataPreparator,
     generate_real_commitment_proof,
     generate_real_phase2b_proofs,
+    generate_snark_phase2b_proofs,
 )
 
 
@@ -68,6 +69,17 @@ def main():
     help='Include real Phase 2B proofs (experimental)'
 )
 @click.option(
+    '--zk-backend',
+    type=click.Choice(
+        ['mock', 'pedersen', 'snark-membership', 'snark'], case_sensitive=False
+    ),
+    default=None,
+    help=(
+        'Select ZK backend for Phase 2B proofs '
+        '(mock, pedersen, snark-membership)'
+    )
+)
+@click.option(
     '--duration',
     type=int,
     default=10,
@@ -101,6 +113,7 @@ def analyze(
     with_zk_proofs,
     with_real_zk,
     with_real_phase2b,
+    zk_backend,
     duration,
     listen_addr,
     connect_to,
@@ -239,6 +252,16 @@ def analyze(
         return collector, stats
     
     try:
+        with_snark_phase2b = False
+        if zk_backend:
+            zk_backend = zk_backend.lower()
+            if zk_backend == "mock":
+                with_zk_proofs = True
+            elif zk_backend == "pedersen":
+                with_real_phase2b = True
+            elif zk_backend in ("snark-membership", "snark"):
+                with_snark_phase2b = True
+
         # Run analysis (real or simulated)
         if simulate:
             collector, stats = _analyze_simulated()
@@ -263,6 +286,7 @@ def analyze(
         zk_proofs = None
         real_zk_proof = None
         real_phase2b_proofs = None
+        snark_phase2b_proofs = None
         if with_zk_proofs:
             if verbose:
                 click.echo("\nGenerating mock ZK proofs...")
@@ -305,6 +329,41 @@ def analyze(
                         fg="yellow",
                     )
                 )
+
+        if with_snark_phase2b:
+            if verbose:
+                click.echo("\nGenerating SNARK Phase 2B proof (experimental)...")
+            try:
+                snark_phase2b_proofs = generate_snark_phase2b_proofs(collector)
+            except Exception as exc:
+                click.echo(
+                    click.style(
+                        f"⚠️  SNARK Phase 2B proofs unavailable: {exc}",
+                        fg="yellow",
+                    )
+                )
+                if zk_proofs is None:
+                    zk_proofs = _generate_zk_proofs(collector, verbose)
+            else:
+                verified_count = sum(
+                    1 for item in snark_phase2b_proofs if item.get("verified")
+                )
+                if verified_count:
+                    click.echo(
+                        click.style(
+                            f"✓ SNARK Phase 2B proofs verified: {verified_count}/{len(snark_phase2b_proofs)}",
+                            fg="green",
+                        )
+                    )
+                else:
+                    click.echo(
+                        click.style(
+                            "⚠️  SNARK Phase 2B proofs unavailable; falling back to mock proofs",
+                            fg="yellow",
+                        )
+                    )
+                    if zk_proofs is None:
+                        zk_proofs = _generate_zk_proofs(collector, verbose)
         
         # Generate report
         if verbose:
@@ -320,6 +379,7 @@ def analyze(
                 verbose=verbose,
                 real_zk_proof=real_zk_proof,
                 real_phase2b_proofs=real_phase2b_proofs,
+                snark_phase2b_proofs=snark_phase2b_proofs,
                 data_source=data_source,
             )
             if output:
@@ -334,6 +394,7 @@ def analyze(
                 zk_proofs,
                 real_zk_proof=real_zk_proof,
                 real_phase2b_proofs=real_phase2b_proofs,
+                snark_phase2b_proofs=snark_phase2b_proofs,
                 data_source=data_source,
             )
             output_path = output or "privacy_report.json"
@@ -346,6 +407,7 @@ def analyze(
                 zk_proofs,
                 real_zk_proof=real_zk_proof,
                 real_phase2b_proofs=real_phase2b_proofs,
+                snark_phase2b_proofs=snark_phase2b_proofs,
                 data_source=data_source,
             )
             output_path = output or "privacy_report.html"

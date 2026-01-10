@@ -13,6 +13,7 @@ from libp2p_privacy_poc.report_generator import ReportGenerator
 from libp2p_privacy_poc.zk_integration import (
     generate_real_commitment_proof,
     generate_real_phase2b_proofs,
+    generate_snark_phase2b_proofs,
 )
 
 
@@ -80,6 +81,25 @@ def test_generate_real_phase2b_proofs_backend_failure(monkeypatch: pytest.Monkey
     assert len(results) == 3
     assert all(result["verified"] is False for result in results)
     assert all(result["error"] for result in results)
+
+
+def test_generate_snark_phase2b_proofs_missing_assets(tmp_path):
+    pytest.importorskip("membership_py")
+
+    collector = _make_collector()
+    params_dir = tmp_path / "params"
+    prover_path = tmp_path / "prove_membership"
+
+    results = generate_snark_phase2b_proofs(
+        collector,
+        params_dir=params_dir,
+        prover_path=prover_path,
+    )
+
+    assert len(results) == 1
+    assert results[0]["backend"] == "snark"
+    assert results[0]["verified"] is False
+    assert results[0]["error"]
 
 
 def test_cli_without_real_zk_flag_skips_helper(monkeypatch: pytest.MonkeyPatch):
@@ -157,6 +177,49 @@ def test_cli_with_real_phase2b_flag_calls_helper(monkeypatch: pytest.MonkeyPatch
     assert called["flag"] is True
 
 
+def test_cli_with_snark_backend_falls_back_to_mock(monkeypatch: pytest.MonkeyPatch):
+    from libp2p_privacy_poc import cli
+
+    called = {"snark": False, "mock": False}
+
+    def _fake_snark(*args, **kwargs):
+        called["snark"] = True
+        return [
+            {
+                "backend": "snark",
+                "statement": "anon_set_membership_v1",
+                "peer_id": "peer-1",
+                "session_id": "peer-1:1",
+                "verified": False,
+                "error": "boom",
+            }
+        ]
+
+    def _fake_mock(*args, **kwargs):
+        called["mock"] = True
+        return {"anonymity_set": []}
+
+    monkeypatch.setattr(cli, "generate_snark_phase2b_proofs", _fake_snark)
+    monkeypatch.setattr(cli, "_generate_zk_proofs", _fake_mock)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli.main,
+        [
+            "analyze",
+            "--simulate",
+            "--duration",
+            "1",
+            "--zk-backend",
+            "snark-membership",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert called["snark"] is True
+    assert called["mock"] is True
+
+
 def test_cli_reports_data_source_label():
     from libp2p_privacy_poc import cli
 
@@ -197,3 +260,32 @@ def test_report_includes_real_phase2b_proofs():
     )
     data = json.loads(json_report)
     assert data["real_phase2b_proofs"] == proofs
+
+
+def test_report_includes_snark_phase2b_proofs():
+    report = PrivacyReport(timestamp=0.0, overall_risk_score=0.0)
+    report_gen = ReportGenerator()
+    proofs = [
+        {
+            "backend": "snark",
+            "statement": "anon_set_membership_v1",
+            "peer_id": "peer-1",
+            "session_id": "peer-1:1",
+            "verified": True,
+            "error": None,
+        }
+    ]
+
+    console = report_gen.generate_console_report(
+        report,
+        snark_phase2b_proofs=proofs,
+    )
+    assert "Phase 2B Statements (SNARK)" in console
+    assert "anon_set_membership_v1" in console
+
+    json_report = report_gen.generate_json_report(
+        report,
+        snark_phase2b_proofs=proofs,
+    )
+    data = json.loads(json_report)
+    assert data["snark_phase2b_proofs"] == proofs

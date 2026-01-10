@@ -1,0 +1,3 @@
+[workspace]
+members = ["membership", "membership_py"]
+resolver = "2"

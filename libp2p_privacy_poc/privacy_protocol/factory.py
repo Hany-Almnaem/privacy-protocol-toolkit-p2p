@@ -45,9 +45,12 @@ def _normalize_backend_name(value: str | None, *, source: str) -> str | None:
 
 
 def _resolve_module_path(module_path: str) -> str:
-    if module_path.startswith("privacy_protocol."):
-        if importlib.util.find_spec("privacy_protocol") is None and _PACKAGE_ROOT:
-            return f"{_PACKAGE_ROOT}.{module_path}"
+    if (
+        module_path.startswith("privacy_protocol.")
+        and _PACKAGE_ROOT
+        and _PACKAGE_ROOT != "privacy_protocol"
+    ):
+        return f"{_PACKAGE_ROOT}.{module_path}"
     return module_path
 
 
