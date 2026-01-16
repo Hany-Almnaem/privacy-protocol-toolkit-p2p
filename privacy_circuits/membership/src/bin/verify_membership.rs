@@ -1,7 +1,10 @@
 use ark_bn254::Bn254;
 use ark_groth16::{Proof, VerifyingKey};
 use ark_serialize::CanonicalDeserialize;
-use membership::{verify_membership, MembershipPublicInputsBytes, MembershipPublicInputsV1Bytes};
+use membership::{
+    verify_membership, verify_membership_v2, MembershipPublicInputsBytes,
+    MembershipPublicInputsV1Bytes, MembershipPublicInputsV2Bytes,
+};
 use std::env;
 use std::fs;
 use std::fs::File;
@@ -12,7 +15,7 @@ fn main() {
         Some(paths) => paths,
         None => {
             eprintln!(
-                "Usage: verify_membership --vk <path> --public-inputs <path> --proof <path> [--schema <v0|v1>]"
+                "Usage: verify_membership --vk <path> --public-inputs <path> --proof <path> [--schema <v0|v1|v2>]"
             );
             std::process::exit(1);
         }
@@ -26,7 +29,15 @@ fn main() {
         }
     };
 
-    let public_inputs = match schema {
+    let proof = match read_proof(&proof_path) {
+        Ok(proof) => proof,
+        Err(err) => {
+            eprintln!("failed to read proof: {err}");
+            std::process::exit(1);
+        }
+    };
+
+    let verified = match schema {
         Schema::V0 => {
             let inputs_bytes = match read_public_inputs_v0(&inputs_path) {
                 Ok(inputs) => inputs,
@@ -36,10 +47,18 @@ fn main() {
                 }
             };
 
-            match inputs_bytes.into_public_inputs() {
+            let public_inputs = match inputs_bytes.into_public_inputs() {
                 Ok(inputs) => inputs,
                 Err(err) => {
                     eprintln!("invalid public inputs: {err}");
+                    std::process::exit(1);
+                }
+            };
+
+            match verify_membership(&vk, &public_inputs, &proof) {
+                Ok(result) => result,
+                Err(err) => {
+                    eprintln!("verification failed: {err}");
                     std::process::exit(1);
                 }
             }
@@ -53,29 +72,46 @@ fn main() {
                 }
             };
 
-            match inputs_bytes.into_public_inputs_with_depth() {
-                Ok((inputs, _depth)) => inputs,
+            let (public_inputs, _depth) = match inputs_bytes.into_public_inputs_with_depth() {
+                Ok((inputs, depth)) => (inputs, depth),
                 Err(err) => {
                     eprintln!("invalid public inputs: {err}");
                     std::process::exit(1);
                 }
+            };
+
+            match verify_membership(&vk, &public_inputs, &proof) {
+                Ok(result) => result,
+                Err(err) => {
+                    eprintln!("verification failed: {err}");
+                    std::process::exit(1);
+                }
             }
         }
-    };
+        Schema::V2 => {
+            let inputs_bytes = match read_public_inputs_v2(&inputs_path) {
+                Ok(inputs) => inputs,
+                Err(err) => {
+                    eprintln!("failed to read public inputs: {err}");
+                    std::process::exit(1);
+                }
+            };
 
-    let proof = match read_proof(&proof_path) {
-        Ok(proof) => proof,
-        Err(err) => {
-            eprintln!("failed to read proof: {err}");
-            std::process::exit(1);
-        }
-    };
+            let (public_inputs, _depth) = match inputs_bytes.into_public_inputs_with_depth() {
+                Ok((inputs, depth)) => (inputs, depth),
+                Err(err) => {
+                    eprintln!("invalid public inputs: {err}");
+                    std::process::exit(1);
+                }
+            };
 
-    let verified = match verify_membership(&vk, &public_inputs, &proof) {
-        Ok(result) => result,
-        Err(err) => {
-            eprintln!("verification failed: {err}");
-            std::process::exit(1);
+            match verify_membership_v2(&vk, &public_inputs, &proof) {
+                Ok(result) => result,
+                Err(err) => {
+                    eprintln!("verification failed: {err}");
+                    std::process::exit(1);
+                }
+            }
         }
     };
 
@@ -103,6 +139,7 @@ fn parse_args() -> Option<(String, String, String, Schema)> {
                 schema = match args.next()?.as_str() {
                     "v0" => Schema::V0,
                     "v1" => Schema::V1,
+                    "v2" => Schema::V2,
                     _ => return None,
                 };
             }
@@ -119,6 +156,7 @@ fn parse_args() -> Option<(String, String, String, Schema)> {
 enum Schema {
     V0,
     V1,
+    V2,
 }
 
 fn read_verifying_key(path: &str) -> Result<VerifyingKey<Bn254>, String> {
@@ -135,6 +173,11 @@ fn read_public_inputs_v0(path: &str) -> Result<MembershipPublicInputsBytes, Stri
 fn read_public_inputs_v1(path: &str) -> Result<MembershipPublicInputsV1Bytes, String> {
     let data = fs::read(path).map_err(|err| err.to_string())?;
     bincode::deserialize::<MembershipPublicInputsV1Bytes>(&data).map_err(|err| err.to_string())
+}
+
+fn read_public_inputs_v2(path: &str) -> Result<MembershipPublicInputsV2Bytes, String> {
+    let data = fs::read(path).map_err(|err| err.to_string())?;
+    bincode::deserialize::<MembershipPublicInputsV2Bytes>(&data).map_err(|err| err.to_string())
 }
 
 fn read_proof(path: &str) -> Result<Proof<Bn254>, String> {

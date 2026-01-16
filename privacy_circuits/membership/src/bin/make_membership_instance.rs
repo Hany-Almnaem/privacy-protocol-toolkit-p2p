@@ -1,9 +1,14 @@
 use ark_bn254::Fr;
+use ark_ff::PrimeField;
 use membership::{
-    commitment_hash, fr_to_fixed_bytes, node_hash, poseidon_hash_leaf, poseidon_params,
-    MembershipInstanceBytes, MembershipInstanceV1Bytes, MembershipPublicInputsBytes,
-    MembershipPublicInputsV1Bytes, MembershipWitnessBytes, MembershipWitnessV1Bytes,
-    MerklePathNodeBytes, MEMBERSHIP_INSTANCE_VERSION_V1, MERKLE_DEPTH,
+    commitment_hash, fr_to_fixed_bytes, node_hash, poseidon_hash_leaf,
+    poseidon_hash_leaf_v2, poseidon_params, MembershipInstanceBytes,
+    MembershipInstanceV1Bytes, MembershipInstanceV2Bytes, MembershipPublicInputsBytes,
+    MembershipPublicInputsV1Bytes, MembershipPublicInputsV2Bytes, MembershipWitnessBytes,
+    MembershipWitnessV1Bytes, MembershipWitnessV2Bytes, MerklePathNodeBytes,
+    MEMBERSHIP_INSTANCE_VERSION_V1, MEMBERSHIP_INSTANCE_VERSION_V2,
+    MEMBERSHIP_STATEMENT_TYPE, MEMBERSHIP_STATEMENT_VERSION_V2, MEMBERSHIP_V2_DEFAULT_CTX_HASH,
+    MEMBERSHIP_V2_DOMAIN_SEP, MERKLE_DEPTH,
 };
 use serde::Serialize;
 use std::env;
@@ -18,7 +23,7 @@ fn main() {
         Err(err) => {
             eprintln!("{err}");
             eprintln!(
-                "Usage: make_membership_instance [--schema <v0|v1>] [--depth <n>] [--out-instance <path>] [--out-public-inputs <path>]"
+                "Usage: make_membership_instance [--schema <v0|v1|v2>] [--depth <n>] [--out-instance <path>] [--out-public-inputs <path>]"
             );
             std::process::exit(1);
         }
@@ -33,6 +38,10 @@ fn main() {
             let (instance_bytes, public_inputs_bytes) = build_v1_instance(args.depth);
             write_outputs(&args.instance_out, &args.public_inputs_out, &instance_bytes, &public_inputs_bytes);
         }
+        Schema::V2 => {
+            let (instance_bytes, public_inputs_bytes) = build_v2_instance(args.depth);
+            write_outputs(&args.instance_out, &args.public_inputs_out, &instance_bytes, &public_inputs_bytes);
+        }
     }
 }
 
@@ -40,6 +49,7 @@ fn main() {
 enum Schema {
     V0,
     V1,
+    V2,
 }
 
 struct Args {
@@ -62,7 +72,8 @@ fn parse_args() -> Result<Args, String> {
                 schema = match args.next().as_deref() {
                     Some("v0") => Schema::V0,
                     Some("v1") => Schema::V1,
-                    _ => return Err("invalid schema (expected v0 or v1)".to_string()),
+                    Some("v2") => Schema::V2,
+                    _ => return Err("invalid schema (expected v0, v1, or v2)".to_string()),
                 };
             }
             "--depth" => {
@@ -90,7 +101,7 @@ fn parse_args() -> Result<Args, String> {
     if matches!(schema, Schema::V0) {
         depth = MERKLE_DEPTH;
     } else if depth == 0 {
-        return Err("depth must be > 0 for schema v1".to_string());
+        return Err("depth must be > 0 for schema v1/v2".to_string());
     }
 
     Ok(Args {
@@ -176,6 +187,60 @@ fn build_v1_instance(depth: usize) -> (MembershipInstanceV1Bytes, MembershipPubl
 
     let instance = MembershipInstanceV1Bytes {
         version: MEMBERSHIP_INSTANCE_VERSION_V1,
+        public_inputs: public_inputs.clone(),
+        witness,
+    };
+
+    (instance, public_inputs)
+}
+
+fn build_v2_instance(depth: usize) -> (MembershipInstanceV2Bytes, MembershipPublicInputsV2Bytes) {
+    let params = poseidon_params::<Fr>();
+    let identity = Fr::from(1u64);
+    let blinding = Fr::from(2u64);
+    let commitment = commitment_hash(&params, identity, blinding);
+    let domain_sep = Fr::from_be_bytes_mod_order(&MEMBERSHIP_V2_DOMAIN_SEP);
+    let ctx_hash = Fr::from_be_bytes_mod_order(&MEMBERSHIP_V2_DEFAULT_CTX_HASH);
+    let mut current = poseidon_hash_leaf_v2(&params, domain_sep, ctx_hash, commitment);
+
+    let mut siblings = Vec::with_capacity(depth);
+    let mut directions = Vec::with_capacity(depth);
+
+    for idx in 0..depth {
+        let sibling_seed = Fr::from((idx as u64) + 20);
+        let sibling = node_hash(&params, commitment, sibling_seed);
+        let is_left = idx % 2 == 0;
+        let (left, right) = if is_left {
+            (sibling, current)
+        } else {
+            (current, sibling)
+        };
+        current = node_hash(&params, left, right);
+        siblings.push(fr_to_fixed_bytes(&sibling));
+        directions.push(is_left);
+    }
+
+    let public_inputs = MembershipPublicInputsV2Bytes {
+        schema_version: MEMBERSHIP_INSTANCE_VERSION_V2,
+        statement_type: MEMBERSHIP_STATEMENT_TYPE,
+        statement_version: MEMBERSHIP_STATEMENT_VERSION_V2,
+        depth: depth as u32,
+        root: fr_to_fixed_bytes(&current).try_into().unwrap(),
+        commitment: fr_to_fixed_bytes(&commitment).try_into().unwrap(),
+        domain_sep: MEMBERSHIP_V2_DOMAIN_SEP,
+        ctx_hash: MEMBERSHIP_V2_DEFAULT_CTX_HASH,
+    };
+    let witness = MembershipWitnessV2Bytes {
+        schema_version: MEMBERSHIP_INSTANCE_VERSION_V2,
+        depth: depth as u32,
+        identity_scalar: fr_to_fixed_bytes(&identity),
+        blinding: fr_to_fixed_bytes(&blinding),
+        merkle_siblings: siblings,
+        merkle_directions: directions,
+    };
+
+    let instance = MembershipInstanceV2Bytes {
+        schema_version: MEMBERSHIP_INSTANCE_VERSION_V2,
         public_inputs: public_inputs.clone(),
         witness,
     };

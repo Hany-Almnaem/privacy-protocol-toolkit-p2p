@@ -13,6 +13,7 @@ def build_membership_instance_bytes(
     *,
     depth: int | None = None,
     schema_version: int = 1,
+    ctx_hash: bytes | bytearray | None = None,
 ):
     """
     Build bincode-encoded instance/public-inputs for the SNARK membership circuit.
@@ -48,8 +49,18 @@ def build_membership_instance_bytes(
             is_left,
         )
 
+    if schema_version == 2:
+        ctx_bytes = _ctx_hash_bytes(ctx_hash)
+        return membership_py.make_membership_instance_v2_bytes(
+            identity_bytes,
+            blinding_bytes,
+            siblings,
+            is_left,
+            ctx_bytes,
+        )
+
     if schema_version != 1:
-        raise ValueError("schema_version must be 0 or 1")
+        raise ValueError("schema_version must be 0, 1, or 2")
 
     return membership_py.make_membership_instance_v1_bytes(
         identity_bytes,
@@ -68,6 +79,7 @@ def write_membership_instance_files(
     *,
     depth: int | None = None,
     schema_version: int = 1,
+    ctx_hash: bytes | bytearray | None = None,
 ) -> tuple[Path, Path]:
     """
     Write SNARK instance/public-input files from Phase 2B inputs.
@@ -78,6 +90,7 @@ def write_membership_instance_files(
         merkle_path,
         depth=depth,
         schema_version=schema_version,
+        ctx_hash=ctx_hash,
     )
     instance_path = Path(instance_path)
     public_inputs_path = Path(public_inputs_path)
@@ -149,3 +162,14 @@ def _field_bytes(data: bytes, label: str) -> bytes:
     if len(data) < 32:
         data = data.rjust(32, b"\x00")
     return data
+
+
+def _ctx_hash_bytes(ctx_hash: bytes | bytearray | None) -> bytes:
+    if ctx_hash is None:
+        return DEFAULT_CTX_HASH
+    if not isinstance(ctx_hash, (bytes, bytearray)):
+        raise TypeError("ctx_hash must be bytes")
+    return _field_bytes(bytes(ctx_hash), "ctx_hash")
+
+
+DEFAULT_CTX_HASH = b"MEMBERSHIP_CTX_V2_______________"

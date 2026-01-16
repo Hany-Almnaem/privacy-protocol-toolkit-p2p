@@ -4,7 +4,8 @@ use ark_serialize::CanonicalDeserialize;
 use ark_serialize::CanonicalSerialize;
 use ark_std::rand::rngs::OsRng;
 use membership::{
-    prove_membership, MembershipInstanceBytes, MembershipInstanceV1Bytes,
+    prove_membership, prove_membership_v2, MembershipInstanceBytes,
+    MembershipInstanceV1Bytes, MembershipInstanceV2Bytes,
 };
 use std::env;
 use std::fs;
@@ -16,7 +17,7 @@ fn main() {
         Some(paths) => paths,
         None => {
             eprintln!(
-                "Usage: prove_membership --pk <path> --instance <path> --proof-out <path> [--schema <v0|v1>]"
+                "Usage: prove_membership --pk <path> --instance <path> --proof-out <path> [--schema <v0|v1|v2>]"
             );
             std::process::exit(1);
         }
@@ -65,6 +66,38 @@ fn main() {
                 }
             }
         }
+        Schema::V2 => {
+            let instance_bytes = match read_instance_v2(&instance_path) {
+                Ok(instance) => instance,
+                Err(err) => {
+                    eprintln!("failed to read instance: {err}");
+                    std::process::exit(1);
+                }
+            };
+
+            let instance = match instance_bytes.into_instance_with_depth() {
+                Ok((instance, _depth)) => instance,
+                Err(err) => {
+                    eprintln!("invalid instance: {err}");
+                    std::process::exit(1);
+                }
+            };
+
+            let mut rng = OsRng;
+            let proof = match prove_membership_v2(&pk, &instance, &mut rng) {
+                Ok(proof) => proof,
+                Err(err) => {
+                    eprintln!("proof generation failed: {err}");
+                    std::process::exit(1);
+                }
+            };
+
+            if let Err(err) = write_serialized(&proof_out, &proof) {
+                eprintln!("failed to write proof: {err}");
+                std::process::exit(1);
+            }
+            return;
+        }
     };
 
     let mut rng = OsRng;
@@ -97,6 +130,7 @@ fn parse_args() -> Option<(String, String, String, Schema)> {
                 schema = match args.next()?.as_str() {
                     "v0" => Schema::V0,
                     "v1" => Schema::V1,
+                    "v2" => Schema::V2,
                     _ => return None,
                 };
             }
@@ -113,6 +147,7 @@ fn parse_args() -> Option<(String, String, String, Schema)> {
 enum Schema {
     V0,
     V1,
+    V2,
 }
 
 fn read_proving_key(path: &str) -> Result<ProvingKey<Bn254>, String> {
@@ -129,6 +164,11 @@ fn read_instance_v0(path: &str) -> Result<MembershipInstanceBytes, String> {
 fn read_instance_v1(path: &str) -> Result<MembershipInstanceV1Bytes, String> {
     let data = fs::read(path).map_err(|err| err.to_string())?;
     bincode::deserialize::<MembershipInstanceV1Bytes>(&data).map_err(|err| err.to_string())
+}
+
+fn read_instance_v2(path: &str) -> Result<MembershipInstanceV2Bytes, String> {
+    let data = fs::read(path).map_err(|err| err.to_string())?;
+    bincode::deserialize::<MembershipInstanceV2Bytes>(&data).map_err(|err| err.to_string())
 }
 
 fn write_serialized<T: CanonicalSerialize>(path: &str, value: &T) -> Result<(), String> {
