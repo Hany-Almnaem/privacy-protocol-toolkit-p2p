@@ -13,24 +13,33 @@ def write_continuity_instance_files(
     out_public_inputs: str | Path,
     *,
     schema_version: int = 1,
+    ctx_hash: bytes | bytearray | None = None,
 ) -> None:
     """
     Write SNARK continuity instance/public-input files using PyO3 bindings.
     """
-    if schema_version != 1:
-        raise ValueError("schema_version must be 1")
-
     continuity_py = _load_continuity_py()
 
     id_bytes = _scalar_to_field_bytes(identity, "identity")
     r1_bytes = _scalar_to_field_bytes(r1, "r1")
     r2_bytes = _scalar_to_field_bytes(r2, "r2")
 
-    instance_bytes, public_inputs_bytes = continuity_py.make_continuity_instance_v1_bytes(
-        id_bytes,
-        r1_bytes,
-        r2_bytes,
-    )
+    if schema_version == 1:
+        instance_bytes, public_inputs_bytes = continuity_py.make_continuity_instance_v1_bytes(
+            id_bytes,
+            r1_bytes,
+            r2_bytes,
+        )
+    elif schema_version == 2:
+        ctx_bytes = _ctx_hash_bytes(ctx_hash)
+        instance_bytes, public_inputs_bytes = continuity_py.make_continuity_instance_v2_bytes(
+            id_bytes,
+            r1_bytes,
+            r2_bytes,
+            ctx_bytes,
+        )
+    else:
+        raise ValueError("schema_version must be 1 or 2")
 
     instance_path = Path(out_instance)
     public_inputs_path = Path(out_public_inputs)
@@ -74,3 +83,14 @@ def _field_bytes(data: bytes, label: str) -> bytes:
     if len(data) < 32:
         data = data.rjust(32, b"\x00")
     return data
+
+
+def _ctx_hash_bytes(ctx_hash: bytes | bytearray | None) -> bytes:
+    if ctx_hash is None:
+        return DEFAULT_CTX_HASH
+    if not isinstance(ctx_hash, (bytes, bytearray)):
+        raise TypeError("ctx_hash must be bytes")
+    return _field_bytes(bytes(ctx_hash), "ctx_hash")
+
+
+DEFAULT_CTX_HASH = b"CONTINUITY_CTX_V2_______________"

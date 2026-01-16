@@ -1,5 +1,7 @@
 use ark_bn254::Fr;
-use continuity::schema::build_instance_v1;
+use continuity::schema::{build_instance_v1, build_instance_v2};
+use continuity::fr_from_fixed_bytes;
+use continuity::CONTINUITY_V2_DEFAULT_CTX_HASH;
 use serde::Serialize;
 use std::env;
 use std::fs::File;
@@ -11,38 +13,48 @@ fn main() {
         Err(err) => {
             eprintln!("{err}");
             eprintln!(
-                "Usage: make_continuity_instance [--schema <v1>] [--out-instance <path>] [--out-public-inputs <path>]"
+                "Usage: make_continuity_instance [--schema <v1|v2>] [--out-instance <path>] [--out-public-inputs <path>]"
             );
             std::process::exit(1);
         }
     };
 
-    if args.schema != "v1" {
-        eprintln!("unsupported schema: {}", args.schema);
-        std::process::exit(1);
-    }
-
     let id = Fr::from(1u64);
     let r1 = Fr::from(2u64);
     let r2 = Fr::from(3u64);
-    let (instance, public_inputs) = build_instance_v1(id, r1, r2);
 
-    write_outputs(
-        &args.instance_out,
-        &args.public_inputs_out,
-        &instance,
-        &public_inputs,
-    );
+    match args.schema {
+        Schema::V1 => {
+            let (instance, public_inputs) = build_instance_v1(id, r1, r2);
+            write_outputs(
+                &args.instance_out,
+                &args.public_inputs_out,
+                &instance,
+                &public_inputs,
+            );
+        }
+        Schema::V2 => {
+            let ctx_hash = fr_from_fixed_bytes("ctx_hash", &CONTINUITY_V2_DEFAULT_CTX_HASH)
+                .expect("default ctx_hash must be valid");
+            let (instance, public_inputs) = build_instance_v2(id, r1, r2, ctx_hash);
+            write_outputs(
+                &args.instance_out,
+                &args.public_inputs_out,
+                &instance,
+                &public_inputs,
+            );
+        }
+    }
 }
 
 struct Args {
-    schema: String,
+    schema: Schema,
     instance_out: String,
     public_inputs_out: String,
 }
 
 fn parse_args() -> Result<Args, String> {
-    let mut schema = "v1".to_string();
+    let mut schema = Schema::V1;
     let mut instance_out = "continuity_instance.bin".to_string();
     let mut public_inputs_out = "continuity_public_inputs.bin".to_string();
     let mut args = env::args().skip(1);
@@ -50,9 +62,11 @@ fn parse_args() -> Result<Args, String> {
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--schema" => {
-                schema = args
-                    .next()
-                    .ok_or_else(|| "missing value for --schema".to_string())?;
+                schema = match args.next().as_deref() {
+                    Some("v1") => Schema::V1,
+                    Some("v2") => Schema::V2,
+                    _ => return Err("invalid schema (expected v1 or v2)".to_string()),
+                };
             }
             "--out-instance" => {
                 instance_out = args
@@ -74,6 +88,12 @@ fn parse_args() -> Result<Args, String> {
         instance_out,
         public_inputs_out,
     })
+}
+
+#[derive(Clone, Copy)]
+enum Schema {
+    V1,
+    V2,
 }
 
 fn write_outputs<T: Serialize, U: Serialize>(

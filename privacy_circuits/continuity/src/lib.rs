@@ -4,18 +4,23 @@ use ark_groth16::{prepare_verifying_key, Groth16, Proof, ProvingKey, VerifyingKe
 use ark_relations::r1cs::SynthesisError;
 use ark_std::rand::RngCore;
 
-use crate::circuit::ContinuityCircuit;
+use crate::circuit::{ContinuityCircuit, ContinuityCircuitV2};
 use crate::schema::{
-    domain_sep_fr, ContinuityInstance, ContinuityPublicInputs,
+    domain_sep_fr, domain_sep_v2_fr, ContinuityInstance, ContinuityInstanceV2Data,
+    ContinuityPublicInputs, ContinuityPublicInputsV2Data,
 };
 
 pub mod circuit;
 pub mod schema;
 
 pub use membership::{commitment_hash, fr_to_fixed_bytes, poseidon_params};
+pub use schema::commitment_hash_v2;
 pub use schema::{
-    ContinuityInstanceV1, ContinuityPublicInputsV1, CONTINUITY_INSTANCE_VERSION_V1,
-    CONTINUITY_V1_DOMAIN_SEP,
+    ContinuityInstanceV1, ContinuityInstanceV2, ContinuityPublicInputsV1,
+    ContinuityPublicInputsV2, CONTINUITY_INSTANCE_VERSION_V1,
+    CONTINUITY_INSTANCE_VERSION_V2, CONTINUITY_STATEMENT_TYPE,
+    CONTINUITY_STATEMENT_VERSION_V2, CONTINUITY_V1_DOMAIN_SEP,
+    CONTINUITY_V2_DEFAULT_CTX_HASH, CONTINUITY_V2_DOMAIN_SEP,
 };
 
 pub fn fr_from_fixed_bytes(label: &str, bytes: &[u8; 32]) -> Result<Fr, String> {
@@ -30,6 +35,18 @@ pub fn build_circuit(instance: &ContinuityInstance) -> ContinuityCircuit<Fr> {
         c1_hash: Some(instance.public_inputs.c1_hash),
         c2_hash: Some(instance.public_inputs.c2_hash),
         domain_sep: Some(instance.public_inputs.domain_sep),
+        id: Some(instance.witness.id),
+        r1: Some(instance.witness.r1),
+        r2: Some(instance.witness.r2),
+    }
+}
+
+pub fn build_circuit_v2(instance: &ContinuityInstanceV2Data) -> ContinuityCircuitV2<Fr> {
+    ContinuityCircuitV2::<Fr> {
+        c1_hash: Some(instance.public_inputs.c1_hash),
+        c2_hash: Some(instance.public_inputs.c2_hash),
+        domain_sep: Some(instance.public_inputs.domain_sep),
+        ctx_hash: Some(instance.public_inputs.ctx_hash),
         id: Some(instance.witness.id),
         r1: Some(instance.witness.r1),
         r2: Some(instance.witness.r2),
@@ -54,12 +71,41 @@ pub fn setup_continuity<R: RngCore>(
     Groth16::<Bn254>::generate_random_parameters_with_reduction(circuit, rng)
 }
 
+pub fn setup_continuity_v2<R: RngCore>(
+    rng: &mut R,
+) -> Result<ProvingKey<Bn254>, SynthesisError> {
+    let params = poseidon_params::<Fr>();
+    let zero = Fr::from(0u64);
+    let ctx_hash = Fr::from(0u64);
+    let commitment = schema::commitment_hash_v2(&params, zero, zero, ctx_hash);
+    let domain_sep = domain_sep_v2_fr();
+    let circuit = ContinuityCircuitV2::<Fr> {
+        c1_hash: Some(commitment),
+        c2_hash: Some(commitment),
+        domain_sep: Some(domain_sep),
+        ctx_hash: Some(ctx_hash),
+        id: Some(zero),
+        r1: Some(zero),
+        r2: Some(zero),
+    };
+    Groth16::<Bn254>::generate_random_parameters_with_reduction(circuit, rng)
+}
+
 pub fn prove_continuity<R: RngCore>(
     pk: &ProvingKey<Bn254>,
     instance: &ContinuityInstance,
     rng: &mut R,
 ) -> Result<Proof<Bn254>, SynthesisError> {
     let circuit = build_circuit(instance);
+    Groth16::<Bn254>::create_random_proof_with_reduction(circuit, pk, rng)
+}
+
+pub fn prove_continuity_v2<R: RngCore>(
+    pk: &ProvingKey<Bn254>,
+    instance: &ContinuityInstanceV2Data,
+    rng: &mut R,
+) -> Result<Proof<Bn254>, SynthesisError> {
+    let circuit = build_circuit_v2(instance);
     Groth16::<Bn254>::create_random_proof_with_reduction(circuit, pk, rng)
 }
 
@@ -77,6 +123,20 @@ pub fn verify_continuity(
     Groth16::<Bn254>::verify_proof(&pvk, proof, &inputs)
 }
 
+pub fn verify_continuity_v2(
+    vk: &VerifyingKey<Bn254>,
+    public_inputs: &ContinuityPublicInputsV2Data,
+    proof: &Proof<Bn254>,
+) -> Result<bool, SynthesisError> {
+    let pvk = prepare_verifying_key(vk);
+    let inputs = vec![
+        public_inputs.c1_hash,
+        public_inputs.c2_hash,
+        public_inputs.domain_sep,
+        public_inputs.ctx_hash,
+    ];
+    Groth16::<Bn254>::verify_proof(&pvk, proof, &inputs)
+}
 #[cfg(test)]
 mod tests {
     use super::{
@@ -84,8 +144,10 @@ mod tests {
         ContinuityInstanceV1, ContinuityPublicInputsV1, CONTINUITY_INSTANCE_VERSION_V1,
         CONTINUITY_V1_DOMAIN_SEP,
     };
-    use crate::circuit::ContinuityCircuit;
-    use crate::schema::{domain_sep_fr, ContinuityInstance};
+    use crate::circuit::{ContinuityCircuit, ContinuityCircuitV2};
+    use crate::schema::{
+        commitment_hash_v2, domain_sep_fr, domain_sep_v2_fr, ContinuityInstance,
+    };
     use ark_bn254::{Bn254, Fr};
     use ark_groth16::{prepare_verifying_key, Groth16};
     use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
@@ -128,6 +190,56 @@ mod tests {
             c1_hash: Some(c1),
             c2_hash: Some(c2),
             domain_sep: Some(Fr::from(123u64)),
+            id: Some(id),
+            r1: Some(r1),
+            r2: Some(r2),
+        };
+
+        assert!(circuit.generate_constraints(cs.clone()).is_ok());
+        assert!(!cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn continuity_v2_domain_sep_tamper_fails() {
+        let params = poseidon_params::<Fr>();
+        let id = Fr::from(2u64);
+        let r1 = Fr::from(3u64);
+        let r2 = Fr::from(4u64);
+        let ctx_hash = Fr::from(9u64);
+        let c1 = commitment_hash_v2(&params, id, r1, ctx_hash);
+        let c2 = commitment_hash_v2(&params, id, r2, ctx_hash);
+
+        let cs = ConstraintSystem::<Fr>::new_ref();
+        let circuit = ContinuityCircuitV2::<Fr> {
+            c1_hash: Some(c1),
+            c2_hash: Some(c2),
+            domain_sep: Some(Fr::from(123u64)),
+            ctx_hash: Some(ctx_hash),
+            id: Some(id),
+            r1: Some(r1),
+            r2: Some(r2),
+        };
+
+        assert!(circuit.generate_constraints(cs.clone()).is_ok());
+        assert!(!cs.is_satisfied().unwrap());
+    }
+
+    #[test]
+    fn continuity_v2_ctx_hash_tamper_fails() {
+        let params = poseidon_params::<Fr>();
+        let id = Fr::from(2u64);
+        let r1 = Fr::from(3u64);
+        let r2 = Fr::from(4u64);
+        let ctx_hash = Fr::from(9u64);
+        let c1 = commitment_hash_v2(&params, id, r1, ctx_hash);
+        let c2 = commitment_hash_v2(&params, id, r2, ctx_hash);
+
+        let cs = ConstraintSystem::<Fr>::new_ref();
+        let circuit = ContinuityCircuitV2::<Fr> {
+            c1_hash: Some(c1),
+            c2_hash: Some(c2),
+            domain_sep: Some(domain_sep_v2_fr()),
+            ctx_hash: Some(Fr::from(10u64)),
             id: Some(id),
             r1: Some(r1),
             r2: Some(r2),

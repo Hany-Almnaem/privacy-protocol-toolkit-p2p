@@ -1,7 +1,10 @@
 use ark_bn254::Bn254;
 use ark_groth16::{Proof, VerifyingKey};
 use ark_serialize::CanonicalDeserialize;
-use continuity::{verify_continuity, ContinuityPublicInputsV1};
+use continuity::{
+    verify_continuity, verify_continuity_v2, ContinuityPublicInputsV1,
+    ContinuityPublicInputsV2,
+};
 use std::env;
 use std::fs;
 use std::fs::File;
@@ -12,37 +15,16 @@ fn main() {
         Some(paths) => paths,
         None => {
             eprintln!(
-                "Usage: verify_continuity --vk <path> --public-inputs <path> --proof <path> [--schema <v1>]"
+                "Usage: verify_continuity --vk <path> --public-inputs <path> --proof <path> [--schema <v1|v2>]"
             );
             std::process::exit(1);
         }
     };
 
-    if schema != "v1" {
-        eprintln!("unsupported schema: {schema}");
-        std::process::exit(1);
-    }
-
     let vk = match read_verifying_key(&vk_path) {
         Ok(vk) => vk,
         Err(err) => {
             eprintln!("failed to read verifying key: {err}");
-            std::process::exit(1);
-        }
-    };
-
-    let inputs_bytes = match read_public_inputs_v1(&inputs_path) {
-        Ok(inputs) => inputs,
-        Err(err) => {
-            eprintln!("failed to read public inputs: {err}");
-            std::process::exit(1);
-        }
-    };
-
-    let public_inputs = match inputs_bytes.into_public_inputs() {
-        Ok(inputs) => inputs,
-        Err(err) => {
-            eprintln!("invalid public inputs: {err}");
             std::process::exit(1);
         }
     };
@@ -55,11 +37,56 @@ fn main() {
         }
     };
 
-    let verified = match verify_continuity(&vk, &public_inputs, &proof) {
-        Ok(result) => result,
-        Err(err) => {
-            eprintln!("verification failed: {err}");
-            std::process::exit(1);
+    let verified = match schema {
+        Schema::V1 => {
+            let inputs_bytes = match read_public_inputs_v1(&inputs_path) {
+                Ok(inputs) => inputs,
+                Err(err) => {
+                    eprintln!("failed to read public inputs: {err}");
+                    std::process::exit(1);
+                }
+            };
+
+            let public_inputs = match inputs_bytes.into_public_inputs() {
+                Ok(inputs) => inputs,
+                Err(err) => {
+                    eprintln!("invalid public inputs: {err}");
+                    std::process::exit(1);
+                }
+            };
+
+            match verify_continuity(&vk, &public_inputs, &proof) {
+                Ok(result) => result,
+                Err(err) => {
+                    eprintln!("verification failed: {err}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        Schema::V2 => {
+            let inputs_bytes = match read_public_inputs_v2(&inputs_path) {
+                Ok(inputs) => inputs,
+                Err(err) => {
+                    eprintln!("failed to read public inputs: {err}");
+                    std::process::exit(1);
+                }
+            };
+
+            let public_inputs = match inputs_bytes.into_public_inputs() {
+                Ok(inputs) => inputs,
+                Err(err) => {
+                    eprintln!("invalid public inputs: {err}");
+                    std::process::exit(1);
+                }
+            };
+
+            match verify_continuity_v2(&vk, &public_inputs, &proof) {
+                Ok(result) => result,
+                Err(err) => {
+                    eprintln!("verification failed: {err}");
+                    std::process::exit(1);
+                }
+            }
         }
     };
 
@@ -72,18 +99,24 @@ fn main() {
     std::process::exit(2);
 }
 
-fn parse_args() -> Option<(String, String, String, String)> {
+fn parse_args() -> Option<(String, String, String, Schema)> {
     let mut vk_path = None;
     let mut inputs_path = None;
     let mut proof_path = None;
-    let mut schema = "v1".to_string();
+    let mut schema = Schema::V1;
     let mut args = env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--vk" => vk_path = args.next(),
             "--public-inputs" => inputs_path = args.next(),
             "--proof" => proof_path = args.next(),
-            "--schema" => schema = args.next()?,
+            "--schema" => {
+                schema = match args.next()?.as_str() {
+                    "v1" => Schema::V1,
+                    "v2" => Schema::V2,
+                    _ => return None,
+                };
+            }
             _ => return None,
         }
     }
@@ -91,6 +124,12 @@ fn parse_args() -> Option<(String, String, String, String)> {
         (Some(vk), Some(inputs), Some(proof)) => Some((vk, inputs, proof, schema)),
         _ => None,
     }
+}
+
+#[derive(Clone, Copy)]
+enum Schema {
+    V1,
+    V2,
 }
 
 fn read_verifying_key(path: &str) -> Result<VerifyingKey<Bn254>, String> {
@@ -102,6 +141,11 @@ fn read_verifying_key(path: &str) -> Result<VerifyingKey<Bn254>, String> {
 fn read_public_inputs_v1(path: &str) -> Result<ContinuityPublicInputsV1, String> {
     let data = fs::read(path).map_err(|err| err.to_string())?;
     bincode::deserialize::<ContinuityPublicInputsV1>(&data).map_err(|err| err.to_string())
+}
+
+fn read_public_inputs_v2(path: &str) -> Result<ContinuityPublicInputsV2, String> {
+    let data = fs::read(path).map_err(|err| err.to_string())?;
+    bincode::deserialize::<ContinuityPublicInputsV2>(&data).map_err(|err| err.to_string())
 }
 
 fn read_proof(path: &str) -> Result<Proof<Bn254>, String> {
