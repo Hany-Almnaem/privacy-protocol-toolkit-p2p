@@ -13,6 +13,7 @@ from privacy_protocol.snark.membership import (  # noqa: E402
     build_membership_instance_bytes,
     write_membership_instance_files,
 )
+from privacy_protocol.snark.assets import resolve_fixture_paths, resolve_vk  # noqa: E402
 
 
 def test_build_membership_instance_bytes() -> None:
@@ -50,14 +51,15 @@ def test_membership_verify_e2e_if_available() -> None:
     if os.environ.get("SNARK_MEMBERSHIP_E2E") != "1":
         pytest.skip("SNARK_MEMBERSHIP_E2E not enabled")
 
-    repo_root = Path(__file__).resolve().parents[3]
-    fixtures_dir = repo_root / "privacy_circuits/fixtures/membership"
-    vk = repo_root / "privacy_circuits/params/membership_depth16_vk.bin"
-    public_inputs = fixtures_dir / "depth16_public_inputs.bin"
-    proof = fixtures_dir / "depth16_proof.bin"
-
-    if not (vk.exists() and public_inputs.exists() and proof.exists()):
-        pytest.skip("SNARK params/proof not available")
+    try:
+        vk = resolve_vk("membership", 1, depth=16)
+        _instance, public_inputs, proof = resolve_fixture_paths(
+            "membership",
+            1,
+            depth=16,
+        )
+    except FileNotFoundError:
+        pytest.skip("SNARK membership fixtures not available")
 
     assert membership_py.verify_membership_v1(
         str(vk),

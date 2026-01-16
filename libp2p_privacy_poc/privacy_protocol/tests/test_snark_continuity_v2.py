@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 import subprocess
 
 import pytest
@@ -12,10 +13,10 @@ continuity_py = pytest.importorskip("continuity_py")
 from privacy_protocol.snark.continuity import (  # noqa: E402
     write_continuity_instance_files,
 )
+from privacy_protocol.snark.assets import resolve_pk, resolve_vk  # noqa: E402
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-PARAMS_DIR = REPO_ROOT / "privacy_circuits/params"
 PROVE_BIN = REPO_ROOT / "privacy_circuits/target/debug/prove_continuity"
 VERIFY_BIN = REPO_ROOT / "privacy_circuits/target/debug/verify_continuity"
 
@@ -25,14 +26,17 @@ CTX_HASH_OFFSET = DOMAIN_SEP_OFFSET + 32
 
 
 def _require_assets() -> None:
+    if os.environ.get("RUN_SLOW") != "1":
+        pytest.skip("RUN_SLOW not enabled")
     if not PROVE_BIN.exists():
         pytest.skip("prove_continuity binary missing; build continuity crate first")
     if not VERIFY_BIN.exists():
         pytest.skip("verify_continuity binary missing; build continuity crate first")
-    if not (PARAMS_DIR / "continuity_v2_pk.bin").exists():
-        pytest.skip("continuity v2 proving key missing")
-    if not (PARAMS_DIR / "continuity_v2_vk.bin").exists():
-        pytest.skip("continuity v2 verifying key missing")
+    try:
+        resolve_pk("continuity", 2)
+        resolve_vk("continuity", 2)
+    except FileNotFoundError:
+        pytest.skip("continuity v2 params not available")
 
 
 @pytest.mark.slow
@@ -57,7 +61,7 @@ def test_continuity_v2_end_to_end(tmp_path: Path) -> None:
         [
             str(PROVE_BIN),
             "--pk",
-            str(PARAMS_DIR / "continuity_v2_pk.bin"),
+            str(resolve_pk("continuity", 2)),
             "--instance",
             str(instance_path),
             "--proof-out",
@@ -76,7 +80,7 @@ def test_continuity_v2_end_to_end(tmp_path: Path) -> None:
         [
             str(VERIFY_BIN),
             "--vk",
-            str(PARAMS_DIR / "continuity_v2_vk.bin"),
+            str(resolve_vk("continuity", 2)),
             "--public-inputs",
             str(public_inputs_path),
             "--proof",
@@ -92,7 +96,7 @@ def test_continuity_v2_end_to_end(tmp_path: Path) -> None:
     assert "verified" in verify.stdout.lower()
 
     assert continuity_py.verify_continuity_v2(
-        str(PARAMS_DIR / "continuity_v2_vk.bin"),
+        str(resolve_vk("continuity", 2)),
         str(public_inputs_path),
         str(proof_path),
     )
@@ -120,7 +124,7 @@ def test_continuity_v2_tamper_domain_sep_fails(tmp_path: Path) -> None:
         [
             str(PROVE_BIN),
             "--pk",
-            str(PARAMS_DIR / "continuity_v2_pk.bin"),
+            str(resolve_pk("continuity", 2)),
             "--instance",
             str(instance_path),
             "--proof-out",
@@ -142,7 +146,7 @@ def test_continuity_v2_tamper_domain_sep_fails(tmp_path: Path) -> None:
         [
             str(VERIFY_BIN),
             "--vk",
-            str(PARAMS_DIR / "continuity_v2_vk.bin"),
+            str(resolve_vk("continuity", 2)),
             "--public-inputs",
             str(tampered_inputs),
             "--proof",
@@ -157,7 +161,7 @@ def test_continuity_v2_tamper_domain_sep_fails(tmp_path: Path) -> None:
     assert verify.returncode != 0
 
     assert not _verify_with_pyo3(
-        PARAMS_DIR / "continuity_v2_vk.bin",
+        resolve_vk("continuity", 2),
         tampered_inputs,
         proof_path,
     )
@@ -185,7 +189,7 @@ def test_continuity_v2_tamper_ctx_hash_fails(tmp_path: Path) -> None:
         [
             str(PROVE_BIN),
             "--pk",
-            str(PARAMS_DIR / "continuity_v2_pk.bin"),
+            str(resolve_pk("continuity", 2)),
             "--instance",
             str(instance_path),
             "--proof-out",
@@ -207,7 +211,7 @@ def test_continuity_v2_tamper_ctx_hash_fails(tmp_path: Path) -> None:
         [
             str(VERIFY_BIN),
             "--vk",
-            str(PARAMS_DIR / "continuity_v2_vk.bin"),
+            str(resolve_vk("continuity", 2)),
             "--public-inputs",
             str(tampered_inputs),
             "--proof",
@@ -222,7 +226,7 @@ def test_continuity_v2_tamper_ctx_hash_fails(tmp_path: Path) -> None:
     assert verify.returncode != 0
 
     assert not _verify_with_pyo3(
-        PARAMS_DIR / "continuity_v2_vk.bin",
+        resolve_vk("continuity", 2),
         tampered_inputs,
         proof_path,
     )

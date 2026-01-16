@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .assets import resolve_pk, resolve_vk
+
 
 def write_continuity_instance_files(
     identity: int,
@@ -94,3 +96,19 @@ def _ctx_hash_bytes(ctx_hash: bytes | bytearray | None) -> bytes:
 
 
 DEFAULT_CTX_HASH = b"CONTINUITY_CTX_V2_______________"
+
+
+def resolve_continuity_vk(
+    schema_version: int,
+    *,
+    base_dir: str | Path | None = None,
+) -> Path:
+    return resolve_vk("continuity", schema_version, base_dir=base_dir)
+
+
+def resolve_continuity_pk(
+    schema_version: int,
+    *,
+    base_dir: str | Path | None = None,
+) -> Path:
+    return resolve_pk("continuity", schema_version, base_dir=base_dir)

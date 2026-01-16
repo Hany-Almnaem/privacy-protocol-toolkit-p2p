@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 import subprocess
 
 import pytest
@@ -12,16 +13,18 @@ membership_py = pytest.importorskip("membership_py")
 from privacy_protocol.snark.membership import (  # noqa: E402
     write_membership_instance_files,
 )
+from privacy_protocol.snark.assets import resolve_pk, resolve_vk  # noqa: E402
 
 
 @pytest.mark.slow
 def test_membership_v2_prove_verify(tmp_path: Path) -> None:
-    repo_root = Path(__file__).resolve().parents[3]
-    params_dir = repo_root / "privacy_circuits" / "params"
-    pk_path = params_dir / "membership_v2_depth16_pk.bin"
-    vk_path = params_dir / "membership_v2_depth16_vk.bin"
+    if os.environ.get("RUN_SLOW") != "1":
+        pytest.skip("RUN_SLOW not enabled")
 
-    if not pk_path.exists() or not vk_path.exists():
+    try:
+        pk_path = resolve_pk("membership", 2, depth=16)
+        vk_path = resolve_vk("membership", 2, depth=16)
+    except FileNotFoundError:
         pytest.skip("membership v2 params not available")
 
     depth = 16
@@ -45,6 +48,7 @@ def test_membership_v2_prove_verify(tmp_path: Path) -> None:
         ctx_hash=ctx_hash,
     )
 
+    repo_root = Path(__file__).resolve().parents[3]
     prove_bin = repo_root / "privacy_circuits" / "target" / "debug" / "prove_membership"
     verify_bin = repo_root / "privacy_circuits" / "target" / "debug" / "verify_membership"
 

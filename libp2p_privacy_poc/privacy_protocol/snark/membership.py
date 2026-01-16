@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable, Tuple
 
+from .assets import resolve_pk, resolve_vk
+
 
 def build_membership_instance_bytes(
     identity_scalar,
@@ -173,3 +175,21 @@ def _ctx_hash_bytes(ctx_hash: bytes | bytearray | None) -> bytes:
 
 
 DEFAULT_CTX_HASH = b"MEMBERSHIP_CTX_V2_______________"
+
+
+def resolve_membership_vk(
+    schema_version: int,
+    *,
+    depth: int | None = None,
+    base_dir: str | Path | None = None,
+) -> Path:
+    return resolve_vk("membership", schema_version, depth=depth, base_dir=base_dir)
+
+
+def resolve_membership_pk(
+    schema_version: int,
+    *,
+    depth: int | None = None,
+    base_dir: str | Path | None = None,
+) -> Path:
+    return resolve_pk("membership", schema_version, depth=depth, base_dir=base_dir)
