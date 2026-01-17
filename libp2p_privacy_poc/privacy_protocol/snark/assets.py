@@ -49,6 +49,7 @@ def resolve_fixture_paths(
     candidates = []
     depth_value = _normalize_depth(statement, depth)
     base_dir = Path(base_dir) if base_dir else _default_fixtures_dir()
+    params_dir = _default_params_dir()
     new_layout = (
         base_dir
         / statement
@@ -60,6 +61,18 @@ def resolve_fixture_paths(
         new_layout / "public_inputs.bin",
         new_layout / "proof.bin",
     ))
+    if params_dir != base_dir:
+        params_layout = (
+            params_dir
+            / statement
+            / f"v{schema_version}"
+            / f"depth-{depth_value}"
+        )
+        candidates.append((
+            params_layout / "instance.bin",
+            params_layout / "public_inputs.bin",
+            params_layout / "proof.bin",
+        ))
 
     if statement == "membership":
         if depth is None:
