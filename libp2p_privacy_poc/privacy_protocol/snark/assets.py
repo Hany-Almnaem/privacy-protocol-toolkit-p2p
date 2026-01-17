@@ -82,6 +82,14 @@ def resolve_fixture_paths(
             params_dir / f"continuity{suffix}_public_inputs.bin",
             params_dir / f"continuity{suffix}_proof.bin",
         ))
+    elif statement == "unlinkability":
+        params_dir = _default_params_dir()
+        suffix = "" if schema_version == 1 else f"_v{schema_version}"
+        candidates.append((
+            params_dir / f"unlinkability{suffix}_instance.bin",
+            params_dir / f"unlinkability{suffix}_public_inputs.bin",
+            params_dir / f"unlinkability{suffix}_proof.bin",
+        ))
 
     return _first_existing_tuple(
         candidates,
@@ -121,6 +129,9 @@ def _resolve_param_path(
     elif statement == "continuity":
         suffix = "" if schema_version == 1 else f"_v{schema_version}"
         candidates.append(base_dir / f"continuity{suffix}_{kind}.bin")
+    elif statement == "unlinkability":
+        suffix = "" if schema_version == 1 else f"_v{schema_version}"
+        candidates.append(base_dir / f"unlinkability{suffix}_{kind}.bin")
 
     return _first_existing(candidates, f"{statement} v{schema_version} {kind}")
 
