@@ -68,34 +68,38 @@ class SnarkBackend:
     def verify(
         statement_type: str,
         schema_version: int,
-        vk_path_or_bytes: str | Path | bytes | bytearray,
-        public_inputs_path_or_bytes: str | Path | bytes | bytearray,
-        proof_path_or_bytes: str | Path | bytes | bytearray,
+        vk: str | Path | bytes | bytearray,
+        public_inputs: str | Path | bytes | bytearray,
+        proof: str | Path | bytes | bytearray,
     ) -> bool:
         if statement_type not in _SCHEMAS:
-            return False
+            raise ValueError(f"Unknown statement_type: {statement_type}")
         schema_map = _SCHEMAS[statement_type]
         if schema_version not in schema_map:
-            return False
+            raise ValueError(
+                f"Unsupported schema_version {schema_version} for {statement_type}"
+            )
 
         schema = schema_map[schema_version]
-        public_inputs_bytes = _read_bytes(public_inputs_path_or_bytes)
+        public_inputs_bytes = _read_bytes(public_inputs)
         if public_inputs_bytes is None:
             return False
         if not _validate_header(schema, public_inputs_bytes):
             return False
 
-        vk_bytes = _read_bytes(vk_path_or_bytes)
-        proof_bytes = _read_bytes(proof_path_or_bytes)
+        vk_bytes = _read_bytes(vk)
+        proof_bytes = _read_bytes(proof)
         if vk_bytes is None or proof_bytes is None:
             return False
 
         module = _load_module(statement_type)
         if module is None:
-            return False
+            raise ValueError(f"Missing binding for statement_type: {statement_type}")
         verifier = getattr(module, schema.verifier_bytes, None)
         if verifier is None:
-            return False
+            raise ValueError(
+                f"Missing verifier for {statement_type} schema v{schema_version}"
+            )
 
         try:
             return bool(verifier(vk_bytes, public_inputs_bytes, proof_bytes))
