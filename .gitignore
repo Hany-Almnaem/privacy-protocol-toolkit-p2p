@@ -39,3 +39,5 @@ privacy_report*.html
 privacy_report*.json
 *.log
 
+# Rust build artifacts
+privacy_circuits/target/
