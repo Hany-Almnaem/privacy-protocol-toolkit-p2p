@@ -103,6 +103,38 @@ def main():
     help='Use simulated data instead of real network (default: False)'
 )
 @click.option(
+    '--offline/--no-network',
+    is_flag=True,
+    default=False,
+    help='Disable network proof exchange'
+)
+@click.option(
+    '--zk-peer',
+    type=str,
+    help='Peer ID or multiaddr for network proof exchange'
+)
+@click.option(
+    '--zk-statement',
+    type=click.Choice(['membership', 'continuity', 'unlinkability'], case_sensitive=False),
+    default='membership',
+    show_default=True,
+    help='Statement to request over network'
+)
+@click.option(
+    '--zk-timeout',
+    type=int,
+    default=8,
+    show_default=True,
+    help='Network proof exchange timeout in seconds'
+)
+@click.option(
+    '--zk-assets-dir',
+    type=click.Path(),
+    default='privacy_circuits/params',
+    show_default=True,
+    help='Base directory for network proof verifier assets'
+)
+@click.option(
     '--verbose',
     is_flag=True,
     help='Enable verbose output'
@@ -118,6 +150,11 @@ def analyze(
     listen_addr,
     connect_to,
     simulate,
+    offline,
+    zk_peer,
+    zk_statement,
+    zk_timeout,
+    zk_assets_dir,
     verbose
 ):
     """
@@ -287,6 +324,54 @@ def analyze(
         real_zk_proof = None
         real_phase2b_proofs = None
         snark_phase2b_proofs = None
+        network_snark_proofs = None
+        if not simulate and not offline:
+            try:
+                from libp2p_privacy_poc.network.privacyzk.integration import (
+                    try_real_proofs,
+                )
+                exchange = try_real_proofs(
+                    collector,
+                    statement=zk_statement,
+                    assets_dir=zk_assets_dir,
+                    timeout=zk_timeout,
+                    zk_peer=zk_peer,
+                    offline=offline,
+                )
+                if exchange.attempted:
+                    network_snark_proofs = exchange.results
+                    if exchange.success:
+                        click.echo(
+                            click.style(
+                                "✓ Real ZK proof exchange verified",
+                                fg="green",
+                            )
+                        )
+                    else:
+                        click.echo(
+                            click.style(
+                                "⚠️  Real ZK proof exchange unavailable; falling back to legacy simulation.",
+                                fg="yellow",
+                            )
+                        )
+            except Exception as exc:
+                network_snark_proofs = [
+                    {
+                        "backend": "snark-network",
+                        "statement": f"{zk_statement}_v2",
+                        "peer_id": None,
+                        "schema_v": 2,
+                        "depth": 16 if zk_statement == "membership" else 0,
+                        "verified": False,
+                        "error": str(exc),
+                    }
+                ]
+                click.echo(
+                    click.style(
+                        "⚠️  Real ZK proof exchange unavailable; falling back to legacy simulation.",
+                        fg="yellow",
+                    )
+                )
         if with_zk_proofs:
             if verbose:
                 click.echo("\nGenerating mock ZK proofs...")
@@ -364,6 +449,12 @@ def analyze(
                     )
                     if zk_proofs is None:
                         zk_proofs = _generate_zk_proofs(collector, verbose)
+
+        if network_snark_proofs:
+            if snark_phase2b_proofs:
+                snark_phase2b_proofs = network_snark_proofs + snark_phase2b_proofs
+            else:
+                snark_phase2b_proofs = network_snark_proofs
         
         # Generate report
         if verbose:
@@ -495,6 +586,290 @@ def version():
     click.echo("\nlibp2p Privacy Analysis Tool v0.1.0")
     click.echo("Proof of Concept - Not Production Ready\n")
     print_disclaimer()
+
+
+@main.command(name="zk-serve")
+@click.option(
+    "--listen-addr",
+    type=str,
+    default=None,
+    help="Listen address (default: /ip4/<host>/tcp/<port>)",
+)
+@click.option(
+    "--host",
+    type=str,
+    default="127.0.0.1",
+    help="Listen host (default: 127.0.0.1)",
+)
+@click.option(
+    "--port",
+    type=int,
+    default=0,
+    help="Listen port (default: 0)",
+)
+@click.option(
+    "--prove-mode",
+    type=click.Choice(["fixture", "real", "prefer-real"], case_sensitive=False),
+    default="fixture",
+    help="Proof source mode (default: fixture)",
+)
+@click.option(
+    "--assets-dir",
+    type=click.Path(),
+    default="privacy_circuits/params",
+    help="Base directory for fixture assets",
+)
+@click.option(
+    "--strict/--no-strict",
+    default=True,
+    help="Enable strict request validation",
+)
+@click.option(
+    "--verbose",
+    is_flag=True,
+    help="Enable verbose output",
+)
+def zk_serve(listen_addr, host, port, prove_mode, assets_dir, strict, verbose):
+    """
+    Serve privacy proof responses over libp2p.
+    """
+    import trio
+    from libp2p import new_host
+    from libp2p.tools.async_service import background_trio_service
+    from libp2p_privacy_poc.utils import get_peer_listening_address
+    from libp2p_privacy_poc.network.privacyzk.protocol import register_privacyzk_protocol
+    from libp2p_privacy_poc.network.privacyzk.provider import (
+        FixtureProofProvider,
+        HybridProofProvider,
+        ProviderConfig,
+        RealProofProvider,
+    )
+
+    if not listen_addr:
+        listen_addr = f"/ip4/{host}/tcp/{port}"
+
+    config = ProviderConfig(prove_mode=prove_mode, base_dir=assets_dir, strict=strict)
+    if prove_mode == "fixture":
+        provider = FixtureProofProvider(config)
+    elif prove_mode == "real":
+        provider = RealProofProvider(config, prover=None)
+    else:
+        fixture = FixtureProofProvider(ProviderConfig("fixture", base_dir=assets_dir, strict=strict))
+        real = RealProofProvider(ProviderConfig("real", base_dir=assets_dir, strict=strict), prover=None)
+        provider = HybridProofProvider(config, fixture_provider=fixture, real_provider=real)
+
+    async def _serve():
+        host_obj = new_host()
+        register_privacyzk_protocol(host_obj, provider)
+        network = host_obj.get_network()
+
+        async with background_trio_service(network):
+            if verbose:
+                click.echo(f"Listening on {listen_addr} ...")
+            await network.listen(Multiaddr(listen_addr))
+            await trio.sleep(0.2)
+            try:
+                actual_addr = get_peer_listening_address(host_obj)
+                click.echo(f"Peer ID: {host_obj.get_id()}")
+                click.echo(f"Listening: {actual_addr}")
+            except Exception as exc:
+                click.echo(click.style(f"✗ Failed to get listen address: {exc}", fg="red"))
+            click.echo("Serving privacyzk protocol. Press Ctrl+C to stop.")
+            await trio.sleep_forever()
+
+    try:
+        trio.run(_serve)
+    except KeyboardInterrupt:
+        click.echo("\nStopping privacyzk server...")
+
+
+@main.command(name="zk-verify")
+@click.option(
+    "--peer",
+    required=True,
+    help="Peer ID or full multiaddr (/ip4/.../p2p/<peer-id>)",
+)
+@click.option(
+    "--statement",
+    type=click.Choice(["membership", "continuity", "unlinkability"], case_sensitive=False),
+    required=True,
+    help="Statement type to request",
+)
+@click.option(
+    "--schema",
+    type=int,
+    default=2,
+    show_default=True,
+    help="SNARK schema version",
+)
+@click.option(
+    "--depth",
+    type=int,
+    default=None,
+    help="Merkle depth (membership only)",
+)
+@click.option(
+    "--assets-dir",
+    type=click.Path(),
+    default="privacy_circuits/params",
+    help="Base directory for verifier assets",
+)
+@click.option(
+    "--timeout",
+    type=int,
+    default=10,
+    show_default=True,
+    help="Request timeout in seconds",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Output JSON result",
+)
+def zk_verify(peer, statement, schema, depth, assets_dir, timeout, as_json):
+    """
+    Request a proof from a peer and verify it locally.
+    """
+    import secrets
+    import trio
+    from libp2p import new_host
+    from libp2p.peer.id import ID
+    from libp2p.peer.peerinfo import info_from_p2p_addr
+    from libp2p.tools.async_service import background_trio_service
+    from libp2p_privacy_poc.network.privacyzk.assets import AssetsResolver
+    from libp2p_privacy_poc.network.privacyzk.client import request_proof
+    from libp2p_privacy_poc.network.privacyzk.messages import ProofRequest
+    from libp2p_privacy_poc.network.privacyzk.constants import (
+        DEFAULT_MEMBERSHIP_DEPTH,
+        MSG_V,
+    )
+    from libp2p_privacy_poc.privacy_protocol.snark.backend import SnarkBackend
+
+    statement = statement.lower()
+    if depth is None:
+        depth = DEFAULT_MEMBERSHIP_DEPTH if statement == "membership" else 0
+
+    if statement != "membership" and depth != 0:
+        click.echo("Depth must be 0 for continuity/unlinkability", err=True)
+        sys.exit(2)
+    if statement == "membership" and depth < 1:
+        click.echo("Depth must be >= 1 for membership", err=True)
+        sys.exit(2)
+
+    req = ProofRequest(
+        msg_v=MSG_V,
+        t=statement,
+        schema_v=schema,
+        d=depth,
+        nonce=secrets.token_bytes(16),
+    )
+
+    async def _run_request():
+        host_obj = new_host()
+        network = host_obj.get_network()
+        async with background_trio_service(network):
+            await network.listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
+            if peer.startswith("/"):
+                peer_info = info_from_p2p_addr(Multiaddr(peer))
+                await host_obj.connect(peer_info)
+                peer_id = peer_info.peer_id
+            else:
+                peer_id = ID.from_base58(peer)
+            with trio.fail_after(timeout):
+                return await request_proof(host_obj, peer_id, req)
+
+    try:
+        response = trio.run(_run_request)
+    except Exception as exc:
+        _emit_result(
+            as_json,
+            ok=False,
+            verified=False,
+            statement=statement,
+            schema=schema,
+            depth=depth,
+            error=str(exc),
+        )
+        sys.exit(1)
+
+    if response.t != statement or response.schema_v != schema or response.d != depth:
+        _emit_result(
+            as_json,
+            ok=False,
+            verified=False,
+            statement=statement,
+            schema=schema,
+            depth=depth,
+            error="response metadata mismatch",
+        )
+        sys.exit(1)
+
+    if not response.ok:
+        _emit_result(
+            as_json,
+            ok=False,
+            verified=False,
+            statement=statement,
+            schema=schema,
+            depth=depth,
+            error=response.err or "proof request failed",
+        )
+        sys.exit(1)
+
+    try:
+        resolver = AssetsResolver(assets_dir)
+        fixture = resolver.resolve_fixture(statement, schema, depth)
+    except Exception as exc:
+        _emit_result(
+            as_json,
+            ok=True,
+            verified=False,
+            statement=statement,
+            schema=schema,
+            depth=depth,
+            error=f"vk resolution failed: {exc}",
+        )
+        sys.exit(1)
+
+    verified = SnarkBackend.verify(
+        statement_type=statement,
+        schema_version=schema,
+        vk=str(fixture.vk_path),
+        public_inputs=response.public_inputs,
+        proof=response.proof,
+    )
+
+    _emit_result(
+        as_json,
+        ok=True,
+        verified=verified,
+        statement=statement,
+        schema=schema,
+        depth=depth,
+        error=None if verified else "verification failed",
+    )
+    sys.exit(0 if verified else 2)
+
+
+def _emit_result(as_json, ok, verified, statement, schema, depth, error):
+    if as_json:
+        payload = {
+            "ok": ok,
+            "verified": verified,
+            "statement": statement,
+            "schema": schema,
+            "depth": depth,
+            "error": error,
+        }
+        click.echo(json.dumps(payload))
+    else:
+        if verified:
+            click.echo(click.style("PASS", fg="green"))
+        else:
+            click.echo(click.style("FAIL", fg="red"))
+        if error:
+            click.echo(f"Error: {error}")
 
 
 def _simulate_network_activity(collector: MetadataCollector, verbose: bool = False):
