@@ -134,9 +134,8 @@ class PrivacyNotifee(INotifee):
             elif hasattr(conn, 'raw_conn') and hasattr(conn.raw_conn, 'multiaddr'):
                 multiaddr = conn.raw_conn.multiaddr
             else:
-                # Fallback: get from transport addresses
-                addrs = conn.get_transport_addresses() if hasattr(conn, 'get_transport_addresses') else []
-                multiaddr = addrs[0] if addrs else None
+                # Avoid peerstore lookups to prevent noisy warnings.
+                multiaddr = None
             
             # Determine direction based on whether we initiated the connection
             direction = "outbound" if hasattr(conn, 'initiator') and conn.initiator else "inbound"
@@ -159,9 +158,8 @@ class PrivacyNotifee(INotifee):
                 multiaddr = conn.multiaddr
             elif hasattr(conn, 'raw_conn') and hasattr(conn.raw_conn, 'multiaddr'):
                 multiaddr = conn.raw_conn.multiaddr
-            elif hasattr(conn, 'get_transport_addresses'):
-                addrs = conn.get_transport_addresses()
-                multiaddr = addrs[0] if addrs else None
+            else:
+                multiaddr = None
             
             if peer_id and multiaddr:
                 self.collector.on_connection_closed(peer_id, multiaddr)
@@ -456,4 +454,3 @@ class MetadataCollector:
         self.active_sessions.clear()
         self.total_connections = 0
         self.total_disconnections = 0
-
