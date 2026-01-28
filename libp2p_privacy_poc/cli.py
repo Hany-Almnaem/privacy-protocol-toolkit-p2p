@@ -151,6 +151,12 @@ def _configure_logging(level: str) -> None:
     help='Base directory for network proof verifier assets'
 )
 @click.option(
+    '--zk-allow-fixture',
+    is_flag=True,
+    default=False,
+    help='Allow fixture proofs for network exchange (default: require real proofs)'
+)
+@click.option(
     '--verbose',
     is_flag=True,
     help='Enable verbose output'
@@ -171,6 +177,7 @@ def analyze(
     zk_statement,
     zk_timeout,
     zk_assets_dir,
+    zk_allow_fixture,
     verbose
 ):
     """
@@ -353,7 +360,7 @@ def analyze(
                     timeout=zk_timeout,
                     zk_peer=zk_peer,
                     offline=offline,
-                    require_real=True,
+                    require_real=not zk_allow_fixture,
                 )
                 if exchange.attempted:
                     network_snark_proofs = exchange.results
