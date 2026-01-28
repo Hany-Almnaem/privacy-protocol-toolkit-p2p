@@ -770,7 +770,12 @@ def zk_serve(listen_addr, host, port, prove_mode, assets_dir, strict, verbose):
     is_flag=True,
     help="Output JSON result",
 )
-def zk_verify(peer, statement, schema, depth, assets_dir, timeout, as_json):
+@click.option(
+    "--require-real",
+    is_flag=True,
+    help="Fail if the server did not use real proving",
+)
+def zk_verify(peer, statement, schema, depth, assets_dir, timeout, as_json, require_real):
     """
     Request a proof from a peer and verify it locally.
     """
@@ -862,6 +867,29 @@ def zk_verify(peer, statement, schema, depth, assets_dir, timeout, as_json):
             error=response.err or "proof request failed",
         )
         sys.exit(1)
+
+    if require_real:
+        prove_mode = None
+        meta_bytes = getattr(response, "meta", b"") or b""
+        if meta_bytes:
+            try:
+                import cbor2
+
+                meta = cbor2.loads(meta_bytes)
+                prove_mode = meta.get("prove_mode")
+            except Exception:
+                prove_mode = None
+        if prove_mode != "real":
+            _emit_result(
+                as_json,
+                ok=False,
+                verified=False,
+                statement=statement,
+                schema=schema,
+                depth=depth,
+                error=f"expected prove_mode=real, got {prove_mode or 'unknown'}",
+            )
+            sys.exit(1)
 
     try:
         resolver = AssetsResolver(assets_dir)
