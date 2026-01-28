@@ -353,6 +353,7 @@ def analyze(
                     timeout=zk_timeout,
                     zk_peer=zk_peer,
                     offline=offline,
+                    require_real=True,
                 )
                 if exchange.attempted:
                     network_snark_proofs = exchange.results

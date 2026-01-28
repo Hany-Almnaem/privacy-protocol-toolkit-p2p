@@ -46,6 +46,7 @@ def try_real_proofs(
     timeout: float = 8.0,
     zk_peer: Optional[str] = None,
     offline: bool = False,
+    require_real: bool = False,
 ) -> ProofExchangeResult:
     if offline:
         return ProofExchangeResult(False, False, [], None)
@@ -79,6 +80,14 @@ def try_real_proofs(
             results,
             "Real ZK proof exchange unavailable; falling back to legacy simulation.",
         )
+
+    if require_real:
+        for item in results:
+            if item.get("prove_mode") != "real":
+                item["verified"] = False
+                if not item.get("error"):
+                    mode = item.get("prove_mode") or "unknown"
+                    item["error"] = f"expected prove_mode=real, got {mode}"
 
     success = all(item.get("verified") for item in results)
     fallback_reason = None

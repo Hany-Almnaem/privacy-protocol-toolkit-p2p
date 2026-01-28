@@ -64,3 +64,28 @@ def test_try_real_proofs_exchange_success(monkeypatch: pytest.MonkeyPatch) -> No
     assert result.attempted is True
     assert result.success is True
     assert result.results[0]["verified"] is True
+
+
+def test_try_real_proofs_require_real_rejects_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _exchange(*args, **kwargs):
+        return [
+            {
+                "backend": "snark-network",
+                "statement": "membership_v2",
+                "peer_id": "QmPeer1",
+                "schema_v": 2,
+                "depth": 16,
+                "verified": True,
+                "prove_mode": "fixture",
+                "error": None,
+            }
+        ]
+
+    monkeypatch.setattr(integration, "_exchange", _exchange)
+    result = integration.try_real_proofs(_make_collector(), require_real=True)
+    assert result.attempted is True
+    assert result.success is False
+    assert result.results[0]["verified"] is False
+    assert "prove_mode" in (result.results[0]["error"] or "")
