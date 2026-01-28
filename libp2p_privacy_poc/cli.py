@@ -131,7 +131,7 @@ def _configure_logging(level: str) -> None:
 )
 @click.option(
     '--zk-statement',
-    type=click.Choice(['membership', 'continuity', 'unlinkability'], case_sensitive=False),
+    type=click.Choice(['membership', 'continuity', 'unlinkability', 'all'], case_sensitive=False),
     default='membership',
     show_default=True,
     help='Statement to request over network'
@@ -353,9 +353,16 @@ def analyze(
                 from libp2p_privacy_poc.network.privacyzk.integration import (
                     try_real_proofs,
                 )
+                from libp2p_privacy_poc.network.privacyzk.constants import (
+                    STATEMENT_TYPES,
+                )
+                if zk_statement == "all":
+                    statements = list(STATEMENT_TYPES)
+                else:
+                    statements = [zk_statement]
                 exchange = try_real_proofs(
                     collector,
-                    statement=zk_statement,
+                    statements=statements,
                     assets_dir=zk_assets_dir,
                     timeout=zk_timeout,
                     zk_peer=zk_peer,
@@ -379,16 +386,20 @@ def analyze(
                             )
                         )
             except Exception as exc:
+                statements = [zk_statement]
+                if zk_statement == "all":
+                    statements = ["membership", "continuity", "unlinkability"]
                 network_snark_proofs = [
                     {
                         "backend": "snark-network",
-                        "statement": f"{zk_statement}_v2",
+                        "statement": f"{statement}_v2",
                         "peer_id": None,
                         "schema_v": 2,
-                        "depth": 16 if zk_statement == "membership" else 0,
+                        "depth": 16 if statement == "membership" else 0,
                         "verified": False,
                         "error": str(exc),
                     }
+                    for statement in statements
                 ]
                 click.echo(
                     click.style(

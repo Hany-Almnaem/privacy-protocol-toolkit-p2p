@@ -42,6 +42,7 @@ def try_real_proofs(
     collector: Any,
     *,
     statement: str = "membership",
+    statements: Optional[Iterable[str]] = None,
     assets_dir: str = "privacy_circuits/params",
     timeout: float = 8.0,
     zk_peer: Optional[str] = None,
@@ -55,12 +56,17 @@ def try_real_proofs(
     if not peer_id:
         return ProofExchangeResult(False, False, [], None)
 
-    statement = statement.lower()
-    if statement not in STATEMENT_TYPES:
+    if statements is None:
+        requested = [statement]
+    else:
+        requested = list(statements)
+    normalized = [item.lower() for item in requested if item]
+    invalid = [item for item in normalized if item not in STATEMENT_TYPES]
+    if invalid:
         return ProofExchangeResult(
             True,
             False,
-            [_error_result(statement, peer_id, "unsupported statement")],
+            [_error_result(item, peer_id, "unsupported statement") for item in invalid],
             "unsupported statement",
         )
 
@@ -68,7 +74,7 @@ def try_real_proofs(
         results = _exchange(
             peer_id,
             peer_addr,
-            [statement],
+            normalized,
             assets_dir,
             timeout,
         )

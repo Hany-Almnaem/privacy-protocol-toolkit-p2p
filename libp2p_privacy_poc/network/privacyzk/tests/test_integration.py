@@ -66,6 +66,41 @@ def test_try_real_proofs_exchange_success(monkeypatch: pytest.MonkeyPatch) -> No
     assert result.results[0]["verified"] is True
 
 
+def test_try_real_proofs_multiple_statements(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = {}
+
+    def _exchange(peer_id, peer_addr, statements, assets_dir, timeout):
+        captured["statements"] = statements
+        return [
+            {
+                "backend": "snark-network",
+                "statement": "membership_v2",
+                "peer_id": peer_id,
+                "schema_v": 2,
+                "depth": 16,
+                "verified": True,
+                "error": None,
+            },
+            {
+                "backend": "snark-network",
+                "statement": "continuity_v2",
+                "peer_id": peer_id,
+                "schema_v": 2,
+                "depth": 0,
+                "verified": True,
+                "error": None,
+            },
+        ]
+
+    monkeypatch.setattr(integration, "_exchange", _exchange)
+    result = integration.try_real_proofs(
+        _make_collector(), statements=["membership", "continuity"]
+    )
+    assert captured["statements"] == ["membership", "continuity"]
+    assert result.attempted is True
+    assert result.success is True
+
+
 def test_try_real_proofs_require_real_rejects_fixture(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
