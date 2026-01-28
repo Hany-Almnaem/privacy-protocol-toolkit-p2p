@@ -1,7 +1,7 @@
 # Documentation
 
 ## Scope
-This repository is a prototype/experimental system for privacy analysis on py-libp2p connections. ZK proofs are mock by default; real Sigma proofs for Phase 2A and Phase 2B statements are opt-in via CLI flags. There is no SNARK integration yet, and this is not production-ready.
+This repository is a prototype/experimental system for privacy analysis on py-libp2p connections. ZK proofs are mock by default; real Sigma proofs for Phase 2A and Phase 2B statements are opt-in via CLI flags. SNARK proof exchange over libp2p is available and experimental; this is not production-ready.
 
 ## Documentation Index
 - Project summary and quick start: `README.md`
@@ -12,6 +12,7 @@ This repository is a prototype/experimental system for privacy analysis on py-li
 - Phase 2B progress tracker: `docs/PHASE_2B_PROGRESS.md`
 - Phase 2B learning notes: `docs/phase2_learning.md`
 - Phase 2C migration spec: `docs/PHASE_2C_MIGRATION_SPEC.md`
+- Demo contract (portable defaults): `docs/DEMO_CONTRACT.md`
 
 ## Architecture Summary
 - `MetadataCollector` attaches to the libp2p network and records connection metadata.
