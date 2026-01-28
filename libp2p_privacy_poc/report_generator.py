@@ -133,7 +133,7 @@ class ReportGenerator:
         if real_zk_proof is not None or real_phase2b_proofs or snark_phase2b_proofs:
             lines.append("")
             lines.append("-" * 80)
-            lines.append(color_text("REAL ZK PROOFS (EXPERIMENTAL)", "cyan"))
+            lines.append(color_text("PROOF VERIFICATION", "cyan"))
             lines.append("-" * 80)
             if real_zk_proof is not None:
                 lines.append(f"Backend: {real_zk_proof.get('backend', 'unknown')}")
@@ -155,12 +155,15 @@ class ReportGenerator:
             if real_phase2b_proofs:
                 if real_zk_proof is not None:
                     lines.append("")
-                lines.append("Phase 2B Statements:")
+                lines.append("Proof Statements:")
                 for proof in real_phase2b_proofs:
                     statement = proof.get("statement", "unknown")
                     verified = proof.get("verified")
                     status = color_text("✓", "green") if verified else color_text("✗", "red")
                     lines.append(f"  - {statement}: {status}")
+                    mode = proof.get("prove_mode")
+                    if mode:
+                        lines.append(f"    Mode: {mode}")
                     error = proof.get("error")
                     if not verified and error:
                         lines.append(f"    Error: {error}")
@@ -168,12 +171,15 @@ class ReportGenerator:
             if snark_phase2b_proofs:
                 if real_zk_proof is not None or real_phase2b_proofs:
                     lines.append("")
-                lines.append("Phase 2B Statements (SNARK):")
+                lines.append("SNARK Proof Statements:")
                 for proof in snark_phase2b_proofs:
                     statement = proof.get("statement", "unknown")
                     verified = proof.get("verified")
                     status = color_text("✓", "green") if verified else color_text("✗", "red")
                     lines.append(f"  - {statement}: {status}")
+                    mode = proof.get("prove_mode")
+                    if mode:
+                        lines.append(f"    Mode: {mode}")
                     error = proof.get("error")
                     if not verified and error:
                         lines.append(f"    Error: {error}")
@@ -526,7 +532,7 @@ class ReportGenerator:
                 error_html = f" <span>(Error: {error})</span>" if error and not proof.get("verified") else ""
                 rows.append(f"<li><strong>{statement}:</strong> {verified}{error_html}</li>")
             phase2b_items = f"""
-            <h3>Phase 2B Statements</h3>
+            <h3>Proof Statements</h3>
             <ul>
                 {''.join(rows)}
             </ul>
@@ -542,17 +548,16 @@ class ReportGenerator:
                 error_html = f" <span>(Error: {error})</span>" if error and not proof.get("verified") else ""
                 rows.append(f"<li><strong>{statement}:</strong> {verified}{error_html}</li>")
             snark_items = f"""
-            <h3>Phase 2B Statements (SNARK)</h3>
+            <h3>SNARK Proof Statements</h3>
             <ul>
                 {''.join(rows)}
             </ul>
             """
 
         return f"""
-        <h2>Real ZK Proofs (Experimental)</h2>
+        <h2>Proof Verification</h2>
         <div class="warning">
-            <strong>Experimental</strong><br>
-            This section contains real Phase 2A and Phase 2B proofs.
+            This section contains real proof verification results.
         </div>
         {proof_items}
         {phase2b_items}

@@ -13,7 +13,7 @@ from .limits import READ_TIMEOUT, WRITE_TIMEOUT, read_frame, write_frame
 from .messages import ProofResponse, encode_response
 from .provider import ProofProvider, _encode_meta
 
-TOTAL_TIMEOUT = 10.0
+TOTAL_TIMEOUT = 120.0
 
 
 async def handle_proof_stream(stream: Any, provider: ProofProvider) -> None:

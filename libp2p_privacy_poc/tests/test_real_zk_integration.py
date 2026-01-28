@@ -251,7 +251,7 @@ def test_report_includes_real_phase2b_proofs():
         report,
         real_phase2b_proofs=proofs,
     )
-    assert "REAL ZK PROOFS (EXPERIMENTAL)" in console
+    assert "PROOF VERIFICATION" in console
     assert "anon_set_membership_v1" in console
 
     json_report = report_gen.generate_json_report(
@@ -280,7 +280,7 @@ def test_report_includes_snark_phase2b_proofs():
         report,
         snark_phase2b_proofs=proofs,
     )
-    assert "Phase 2B Statements (SNARK)" in console
+    assert "SNARK Proof Statements" in console
     assert "anon_set_membership_v1" in console
 
     json_report = report_gen.generate_json_report(

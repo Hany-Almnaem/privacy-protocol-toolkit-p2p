@@ -6,6 +6,7 @@ Provides easy-to-use commands for privacy analysis, reporting, and demonstration
 
 import click
 import json
+import logging
 import sys
 import time
 from pathlib import Path
@@ -29,7 +30,17 @@ from libp2p_privacy_poc.zk_integration import (
 
 @click.group()
 @click.version_option(version="0.1.0")
-def main():
+@click.option(
+    "--log-level",
+    type=click.Choice(
+        ["debug", "info", "warning", "error", "critical"],
+        case_sensitive=False,
+    ),
+    default="warning",
+    show_default=True,
+    help="Logging verbosity",
+)
+def main(log_level):
     """
     libp2p Privacy Analysis Tool - Proof of Concept
     
@@ -38,7 +49,12 @@ def main():
     
     ⚠️  PROOF OF CONCEPT - NOT PRODUCTION READY
     """
-    pass
+    _configure_logging(log_level)
+
+
+def _configure_logging(level: str) -> None:
+    numeric_level = getattr(logging, level.upper(), logging.WARNING)
+    logging.basicConfig(level=numeric_level, force=True)
 
 
 @main.command()
@@ -66,7 +82,7 @@ def main():
 @click.option(
     '--with-real-phase2b',
     is_flag=True,
-    help='Include real Phase 2B proofs (experimental)'
+    help='Include real proof statements (experimental)'
 )
 @click.option(
     '--zk-backend',
@@ -75,7 +91,7 @@ def main():
     ),
     default=None,
     help=(
-        'Select ZK backend for Phase 2B proofs '
+        'Select ZK backend for proof statements '
         '(mock, pedersen, snark-membership)'
     )
 )
@@ -395,7 +411,7 @@ def analyze(
 
         if with_real_phase2b:
             if verbose:
-                click.echo("\nGenerating real Phase 2B proofs (experimental)...")
+                click.echo("\nGenerating real proof statements...")
             real_phase2b_proofs = generate_real_phase2b_proofs(collector)
             verified_count = sum(
                 1 for item in real_phase2b_proofs if item.get("verified")
@@ -403,27 +419,27 @@ def analyze(
             if verified_count:
                 click.echo(
                     click.style(
-                        f"✓ Real Phase 2B proofs verified: {verified_count}/{len(real_phase2b_proofs)}",
+                        f"✓ Real proof statements verified: {verified_count}/{len(real_phase2b_proofs)}",
                         fg="green",
                     )
                 )
             else:
                 click.echo(
                     click.style(
-                        "⚠️  Real Phase 2B proofs unavailable",
+                        "⚠️  Real proof statements unavailable",
                         fg="yellow",
                     )
                 )
 
         if with_snark_phase2b:
             if verbose:
-                click.echo("\nGenerating SNARK Phase 2B proof (experimental)...")
+                click.echo("\nGenerating SNARK proof statement...")
             try:
                 snark_phase2b_proofs = generate_snark_phase2b_proofs(collector)
             except Exception as exc:
                 click.echo(
                     click.style(
-                        f"⚠️  SNARK Phase 2B proofs unavailable: {exc}",
+                        f"⚠️  SNARK proof statements unavailable: {exc}",
                         fg="yellow",
                     )
                 )
@@ -436,14 +452,14 @@ def analyze(
                 if verified_count:
                     click.echo(
                         click.style(
-                            f"✓ SNARK Phase 2B proofs verified: {verified_count}/{len(snark_phase2b_proofs)}",
+                            f"✓ SNARK proof statements verified: {verified_count}/{len(snark_phase2b_proofs)}",
                             fg="green",
                         )
                     )
                 else:
                     click.echo(
                         click.style(
-                            "⚠️  SNARK Phase 2B proofs unavailable; falling back to mock proofs",
+                            "⚠️  SNARK proof statements unavailable; falling back to mock proofs",
                             fg="yellow",
                         )
                     )
@@ -644,18 +660,38 @@ def zk_serve(listen_addr, host, port, prove_mode, assets_dir, strict, verbose):
         ProviderConfig,
         RealProofProvider,
     )
+    from libp2p_privacy_poc.network.privacyzk.prover import make_real_prover_callback
 
     if not listen_addr:
         listen_addr = f"/ip4/{host}/tcp/{port}"
+
+    async def _wait_for_listen_addr(host_obj, timeout: float = 5.0) -> Multiaddr:
+        last_exc = None
+        with trio.move_on_after(timeout):
+            while True:
+                try:
+                    return get_peer_listening_address(host_obj)
+                except Exception as exc:
+                    last_exc = exc
+                    await trio.sleep(0.1)
+        if last_exc:
+            raise last_exc
+        raise ValueError("Host has no active listeners")
 
     config = ProviderConfig(prove_mode=prove_mode, base_dir=assets_dir, strict=strict)
     if prove_mode == "fixture":
         provider = FixtureProofProvider(config)
     elif prove_mode == "real":
-        provider = RealProofProvider(config, prover=None)
+        provider = RealProofProvider(
+            config,
+            prover=make_real_prover_callback(assets_dir),
+        )
     else:
         fixture = FixtureProofProvider(ProviderConfig("fixture", base_dir=assets_dir, strict=strict))
-        real = RealProofProvider(ProviderConfig("real", base_dir=assets_dir, strict=strict), prover=None)
+        real = RealProofProvider(
+            ProviderConfig("real", base_dir=assets_dir, strict=strict),
+            prover=make_real_prover_callback(assets_dir),
+        )
         provider = HybridProofProvider(config, fixture_provider=fixture, real_provider=real)
 
     async def _serve():
@@ -666,14 +702,21 @@ def zk_serve(listen_addr, host, port, prove_mode, assets_dir, strict, verbose):
         async with background_trio_service(network):
             if verbose:
                 click.echo(f"Listening on {listen_addr} ...")
-            await network.listen(Multiaddr(listen_addr))
-            await trio.sleep(0.2)
+            listen_ok = await network.listen(Multiaddr(listen_addr))
+            if not listen_ok:
+                click.echo("Error: failed to start listener", err=True)
+                return
+            peer_id = host_obj.get_id()
+            click.echo(f"Peer ID: {peer_id}")
             try:
-                actual_addr = get_peer_listening_address(host_obj)
-                click.echo(f"Peer ID: {host_obj.get_id()}")
-                click.echo(f"Listening: {actual_addr}")
+                actual_addr = await _wait_for_listen_addr(host_obj)
             except Exception as exc:
-                click.echo(click.style(f"✗ Failed to get listen address: {exc}", fg="red"))
+                if "/tcp/0" in listen_addr:
+                    click.echo(f"Error: failed to obtain listening address: {exc}", err=True)
+                    return
+                actual_addr = Multiaddr(listen_addr).encapsulate(Multiaddr(f"/p2p/{peer_id}"))
+                click.echo(f"Warning: using configured listen address; {exc}")
+            click.echo(f"Listening: {actual_addr}")
             click.echo("Serving privacyzk protocol. Press Ctrl+C to stop.")
             await trio.sleep_forever()
 
@@ -772,12 +815,15 @@ def zk_verify(peer, statement, schema, depth, assets_dir, timeout, as_json):
             await network.listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
             if peer.startswith("/"):
                 peer_info = info_from_p2p_addr(Multiaddr(peer))
-                await host_obj.connect(peer_info)
+                with trio.fail_after(timeout):
+                    await host_obj.connect(peer_info)
                 peer_id = peer_info.peer_id
             else:
                 peer_id = ID.from_base58(peer)
             with trio.fail_after(timeout):
-                return await request_proof(host_obj, peer_id, req)
+                return await request_proof(
+                    host_obj, peer_id, req, timeout=timeout
+                )
 
     try:
         response = trio.run(_run_request)
@@ -789,7 +835,7 @@ def zk_verify(peer, statement, schema, depth, assets_dir, timeout, as_json):
             statement=statement,
             schema=schema,
             depth=depth,
-            error=str(exc),
+            error=_format_exception(exc),
         )
         sys.exit(1)
 
@@ -850,6 +896,79 @@ def zk_verify(peer, statement, schema, depth, assets_dir, timeout, as_json):
         error=None if verified else "verification failed",
     )
     sys.exit(0 if verified else 2)
+
+
+@main.command(name="zk-dial")
+@click.option(
+    "--peer",
+    required=True,
+    help="Peer multiaddr to connect to (/ip4/.../p2p/<peer-id>)",
+)
+@click.option(
+    "--count",
+    type=int,
+    default=1,
+    show_default=True,
+    help="Number of concurrent dialers",
+)
+@click.option(
+    "--duration",
+    type=int,
+    default=10,
+    show_default=True,
+    help="Seconds to keep connections open",
+)
+def zk_dial(peer, count, duration):
+    """
+    Dial a peer to create inbound connections during analysis.
+    """
+    import trio
+    from libp2p import new_host
+    from libp2p.peer.peerinfo import info_from_p2p_addr
+    from libp2p.tools.async_service import background_trio_service
+
+    if count < 1:
+        click.echo("Count must be >= 1", err=True)
+        sys.exit(2)
+    if not peer.startswith("/"):
+        click.echo("Peer must be a full multiaddr", err=True)
+        sys.exit(2)
+
+    peer_info = info_from_p2p_addr(Multiaddr(peer))
+    click.echo(f"Dialing {peer} with {count} peer(s) for {duration}s")
+
+    async def _dial_one() -> None:
+        host_obj = new_host()
+        network = host_obj.get_network()
+        async with background_trio_service(network):
+            await network.listen(Multiaddr("/ip4/127.0.0.1/tcp/0"))
+            await host_obj.connect(peer_info)
+            await trio.sleep(duration)
+        await host_obj.close()
+
+    async def _run() -> None:
+        async with trio.open_nursery() as nursery:
+            for _ in range(count):
+                nursery.start_soon(_dial_one)
+
+    try:
+        trio.run(_run)
+    except KeyboardInterrupt:
+        click.echo("Stopping dialers...")
+    except Exception as exc:
+        click.echo(f"Dial failed: {_format_exception(exc)}", err=True)
+        sys.exit(1)
+
+
+def _format_exception(exc: BaseException) -> str:
+    if isinstance(exc, BaseExceptionGroup):
+        parts = []
+        for sub_exc in exc.exceptions:
+            msg = _format_exception(sub_exc)
+            if msg:
+                parts.append(msg)
+        return "; ".join(parts) if parts else str(exc)
+    return str(exc)
 
 
 def _emit_result(as_json, ok, verified, statement, schema, depth, error):

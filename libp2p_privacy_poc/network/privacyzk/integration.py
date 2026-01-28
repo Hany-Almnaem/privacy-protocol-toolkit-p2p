@@ -164,7 +164,9 @@ async def _exchange_async(
             }
             try:
                 with trio.fail_after(timeout):
-                    response = await request_proof(host, peer_id_obj, req)
+                    response = await request_proof(
+                        host, peer_id_obj, req, timeout=timeout
+                    )
                 _update_from_response(result, response)
                 if not response.ok:
                     result["error"] = response.err or "proof request failed"
