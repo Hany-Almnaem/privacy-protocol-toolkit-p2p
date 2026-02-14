@@ -13,7 +13,10 @@ Key responsibilities:
 
 import hashlib
 import json
+import subprocess
+import tempfile
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from libp2p_privacy_poc.mock_zk_proofs import MockZKProofSystem, MockZKProof, ZKProofType
@@ -771,3 +774,170 @@ def generate_real_phase2b_proofs(collector) -> List[Dict[str, Any]]:
             results.append(result)
         print(f"Warning: real Phase 2B proofs unavailable: {exc}")
         return results
+
+
+def generate_snark_phase2b_proofs(
+    collector,
+    *,
+    params_dir: Optional[Path] = None,
+    prover_path: Optional[Path] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Generate and verify a SNARK membership proof (Phase 2B subset).
+
+    Returns a list with a single membership proof result. On failure, returns
+    verified=False and an error message without raising.
+    """
+    result = {
+        "backend": "snark",
+        "statement": "anon_set_membership_v1",
+        "peer_id": None,
+        "session_id": None,
+        "verified": False,
+        "error": None,
+    }
+
+    try:
+        if collector is None:
+            raise ValueError("collector is required")
+
+        peer_ids = _collect_peer_ids(collector)
+        if not peer_ids:
+            raise ValueError("no peers available for SNARK proof")
+
+        peer_id = peer_ids[0]
+        session_id = _select_session_id(collector, peer_id)
+        result["peer_id"] = peer_id
+        result["session_id"] = session_id
+
+        from petlib.bn import Bn
+
+        from libp2p_privacy_poc.privacy_protocol.pedersen import membership as membership_module
+        from libp2p_privacy_poc.privacy_protocol.snark.membership import (
+            build_membership_instance_bytes,
+        )
+
+        order = membership_module.order
+        g = membership_module.g
+        h = membership_module.h
+
+        def _derive_scalar(domain_sep: bytes, label: str) -> Bn:
+            digest = hashlib.sha256(domain_sep + label.encode("utf-8")).digest()
+            scalar = Bn.from_binary(digest) % order
+            if int(scalar) == 0:
+                scalar = Bn.from_num(1)
+            return scalar
+
+        snark_depth = 16
+
+        identity_scalar = _derive_scalar(_PHASE2B_PEER_ID_DOMAIN, peer_id)
+        blinding = _derive_scalar(_PHASE2B_BLINDING_DOMAIN, f"{peer_id}:snark")
+
+        merkle_path = _derive_snark_merkle_path(peer_id, snark_depth)
+
+        instance_bytes, public_inputs_bytes = build_membership_instance_bytes(
+            identity_scalar=identity_scalar,
+            blinding=blinding,
+            merkle_path=merkle_path,
+            depth=snark_depth,
+            schema_version=1,
+        )
+
+        repo_root = Path(__file__).resolve().parents[1]
+        params_dir = Path(params_dir) if params_dir else repo_root / "privacy_circuits/params"
+        vk_path = params_dir / f"membership_depth{snark_depth}_vk.bin"
+        pk_path = params_dir / f"membership_depth{snark_depth}_pk.bin"
+
+        if not vk_path.exists():
+            raise FileNotFoundError(f"missing verifying key: {vk_path}")
+        if not pk_path.exists():
+            raise FileNotFoundError(f"missing proving key: {pk_path}")
+
+        prover_path = Path(prover_path) if prover_path else _find_snark_prover(repo_root)
+        if not prover_path.exists():
+            raise FileNotFoundError(f"missing SNARK prover binary: {prover_path}")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            instance_path = Path(tmp_dir) / "instance.bin"
+            public_inputs_path = Path(tmp_dir) / "public_inputs.bin"
+            proof_path = Path(tmp_dir) / "proof.bin"
+
+            instance_path.write_bytes(instance_bytes)
+            public_inputs_path.write_bytes(public_inputs_bytes)
+
+            _run_snark_prover(
+                prover_path,
+                pk_path,
+                instance_path,
+                proof_path,
+                schema="v1",
+            )
+
+            import membership_py
+
+            verified = membership_py.verify_membership_v1(
+                str(vk_path),
+                str(public_inputs_path),
+                str(proof_path),
+            )
+
+        result["verified"] = bool(verified)
+        result["depth"] = snark_depth
+        if not result["verified"]:
+            result["error"] = "SNARK verification failed"
+
+        return [result]
+
+    except Exception as exc:
+        result["error"] = str(exc)
+        return [result]
+
+
+def _find_snark_prover(repo_root: Path) -> Path:
+    debug_path = repo_root / "privacy_circuits/target/debug/prove_membership"
+    if debug_path.exists():
+        return debug_path
+    release_path = repo_root / "privacy_circuits/target/release/prove_membership"
+    if release_path.exists():
+        return release_path
+    return debug_path
+
+
+def _run_snark_prover(
+    prover_path: Path,
+    proving_key: Path,
+    instance_path: Path,
+    proof_path: Path,
+    *,
+    schema: str = "v0",
+) -> None:
+    command = [
+        str(prover_path),
+        "--pk",
+        str(proving_key),
+        "--instance",
+        str(instance_path),
+        "--proof-out",
+        str(proof_path),
+    ]
+    if schema != "v0":
+        command.extend(["--schema", schema])
+
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.strip() or "unknown prover error"
+        raise RuntimeError(f"SNARK prover failed: {stderr}")
+
+
+def _derive_snark_merkle_path(peer_id: str, depth: int) -> List[Tuple[bytes, bool]]:
+    path: List[Tuple[bytes, bool]] = []
+    for idx in range(depth):
+        digest = hashlib.sha256(f"{peer_id}:snark:{idx}".encode("utf-8")).digest()
+        is_left = idx % 2 == 0
+        path.append((digest, is_left))
+    return path

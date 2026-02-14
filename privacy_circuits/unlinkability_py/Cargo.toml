@@ -1,0 +1,17 @@
+[package]
+name = "unlinkability_py"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[lib]
+name = "unlinkability_py"
+crate-type = ["cdylib"]
+
+[dependencies]
+unlinkability = { path = "../unlinkability" }
+pyo3 = { version = "0.21", features = ["extension-module"] }
+ark-bn254 = "0.4"
+ark-groth16 = "0.4"
+ark-serialize = "0.4"
+bincode = "1"

@@ -1,0 +1,17 @@
+[package]
+name = "continuity_py"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[lib]
+name = "continuity_py"
+crate-type = ["cdylib"]
+
+[dependencies]
+continuity = { path = "../continuity" }
+pyo3 = { version = "0.21", features = ["extension-module"] }
+ark-bn254 = "0.4"
+ark-groth16 = "0.4"
+ark-serialize = "0.4"
+bincode = "1"

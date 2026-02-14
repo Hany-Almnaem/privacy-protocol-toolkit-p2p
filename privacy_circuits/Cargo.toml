@@ -1,0 +1,10 @@
+[workspace]
+members = [
+    "membership",
+    "membership_py",
+    "continuity",
+    "continuity_py",
+    "unlinkability",
+    "unlinkability_py",
+]
+resolver = "2"

@@ -38,4 +38,7 @@ Thumbs.db
 privacy_report*.html
 privacy_report*.json
 *.log
+demo_reports/
 
+# Rust build artifacts
+privacy_circuits/target/

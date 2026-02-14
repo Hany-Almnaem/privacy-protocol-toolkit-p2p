@@ -4,14 +4,14 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="libp2p-privacy-poc",
+    name="privacy-protocol-toolkit-p2p",
     version="0.1.0",
     author="Hany Almnaem",
     author_email="",
-    description="Privacy Analysis Tool for py-libp2p with ZK Proof Concepts (Proof of Concept)",
+    description="Privacy protocol toolkit for py-libp2p with real proof exchange (experimental)",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/Hany-Almnaem/libp2p-privacy-poc",
+    url="https://github.com/Hany-Almnaem/privacy-protocol-toolkit-p2p",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 3 - Alpha",
@@ -30,6 +30,7 @@ setup(
         "libp2p>=0.2.0",
         "trio>=0.27.0",
         "multiaddr>=0.0.9",
+        "cbor2>=5.6.0",
         "pynacl>=1.5.0",
         "cryptography>=44.0.0",
         "numpy>=1.24.0",
@@ -50,8 +51,8 @@ setup(
     },
     entry_points={
         "console_scripts": [
+            "privacy-protocol-toolkit-p2p=libp2p_privacy_poc.cli:main",
             "libp2p-privacy=libp2p_privacy_poc.cli:main",
         ],
     },
 )
-

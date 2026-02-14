@@ -51,7 +51,11 @@ def test_cli_version():
     result = run_cli("version")
     
     assert result.returncode == 0, "Version command should succeed"
-    assert "libp2p Privacy Analysis Tool" in result.stdout or "version" in result.stdout.lower()
+    assert (
+        "Privacy Protocol Toolkit for P2P" in result.stdout
+        or "libp2p Privacy Analysis Tool" in result.stdout
+        or "version" in result.stdout.lower()
+    )
     
     print("✓ Version command works")
 

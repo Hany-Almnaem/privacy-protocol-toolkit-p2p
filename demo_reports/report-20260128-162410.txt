@@ -1,0 +1,91 @@
+Server peer id: QmUsBGeHaTnwKTeeaTy5cc6zUSAjFeTdtFdBHLWebhfUXz
+Running analyze with zk-statement=all...
+
+======================================================================
+libp2p Privacy Analysis Tool
+======================================================================
+
+✓ Using REAL py-libp2p network
+Host ID: QmPjs2MkZubmLmCPH1iuY4bV8pSaQndbvUBjq5HJ4pcAeZ
+✓ Privacy notifee registered with Swarm
+✓ Listening on: /ip4/127.0.0.1/tcp/50158/p2p/QmPjs2MkZubmLmCPH1iuY4bV8pSaQndbvUBjq5HJ4pcAeZ
+[PrivacyNotifee] Connected: QmUsBGeHaTnwKTeeaTy5cc6zUSAjFeTdtFdBHLWebhfUXz via /ip4/127.0.0.1/tcp/50140
+✓ Connected successfully
+
+Capturing network events for 20 seconds...
+
+✓ Capture Complete!
+  Connections: 1
+  Unique Peers: 1
+  Protocols: 0
+
+✓ Analysis Complete!
+  Risk Score: 0.75/1.00
+  Risks Detected: 1
+✓ Real ZK proof exchange verified
+
+
+================================================================================
+PRIVACY ANALYSIS REPORT
+================================================================================
+Report ID: 0053dc1e1097e2ca
+Timestamp: 2026-01-28 16:24:33
+Data Source: REAL
+
+Overall Risk Score: 0.75/1.00
+Risk Level: HIGH
+
+--------------------------------------------------------------------------------
+NETWORK STATISTICS
+--------------------------------------------------------------------------------
+  Total Connections: 1
+  Total Disconnections: 0
+  Active Connections: 1
+  Unique Peers: 1
+  Protocols Used: 0
+  Total Connection History: 0
+
+--------------------------------------------------------------------------------
+PRIVACY RISKS DETECTED
+--------------------------------------------------------------------------------
+Total Risks: 1
+  CRITICAL: 0
+  HIGH: 1
+  MEDIUM: 0
+  LOW: 0
+
+--------------------------------------------------------------------------------
+DETAILED RISK ANALYSIS
+--------------------------------------------------------------------------------
+
+1. HIGH - Small Anonymity Set
+   Small anonymity set: only 1 unique peers observed
+   Confidence: 100%
+
+--------------------------------------------------------------------------------
+PROOF VERIFICATION
+--------------------------------------------------------------------------------
+SNARK Proof Statements:
+  - unlinkability_v2: ✓
+    Mode: real
+  - continuity_v2: ✓
+    Mode: real
+  - membership_v2: ✓
+    Mode: real
+
+--------------------------------------------------------------------------------
+RECOMMENDATIONS
+--------------------------------------------------------------------------------
+1. Connect to more peers to increase anonymity set
+2. Use peer discovery mechanisms
+3. Consider using DHT for larger network participation
+
+================================================================================
+END OF REPORT
+================================================================================
+
+
+======================================================================
+
+Demo complete.
+Report captured in: /Users/hanymac/Downloads/libp2p_privacy_poc/demo_reports/report-20260128-162410.txt

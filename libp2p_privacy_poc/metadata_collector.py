@@ -134,9 +134,8 @@ class PrivacyNotifee(INotifee):
             elif hasattr(conn, 'raw_conn') and hasattr(conn.raw_conn, 'multiaddr'):
                 multiaddr = conn.raw_conn.multiaddr
             else:
-                # Fallback: get from transport addresses
-                addrs = conn.get_transport_addresses() if hasattr(conn, 'get_transport_addresses') else []
-                multiaddr = addrs[0] if addrs else None
+                # Avoid peerstore lookups to prevent noisy warnings.
+                multiaddr = None
             
             # Determine direction based on whether we initiated the connection
             direction = "outbound" if hasattr(conn, 'initiator') and conn.initiator else "inbound"
@@ -159,9 +158,8 @@ class PrivacyNotifee(INotifee):
                 multiaddr = conn.multiaddr
             elif hasattr(conn, 'raw_conn') and hasattr(conn.raw_conn, 'multiaddr'):
                 multiaddr = conn.raw_conn.multiaddr
-            elif hasattr(conn, 'get_transport_addresses'):
-                addrs = conn.get_transport_addresses()
-                multiaddr = addrs[0] if addrs else None
+            else:
+                multiaddr = None
             
             if peer_id and multiaddr:
                 self.collector.on_connection_closed(peer_id, multiaddr)
@@ -218,6 +216,10 @@ class MetadataCollector:
         # Statistics
         self.total_connections = 0
         self.total_disconnections = 0
+
+        # Warnings
+        self.warnings: List[Dict[str, str]] = []
+        self._warned_missing_addrs: Set[str] = set()
         
         # Setup hooks if host provided
         if self.host:
@@ -250,7 +252,19 @@ class MetadataCollector:
             direction: "inbound" or "outbound"
         """
         peer_id_str = str(peer_id)
-        multiaddr_str = str(multiaddr)
+        if multiaddr is None:
+            if peer_id_str not in self._warned_missing_addrs:
+                self._warned_missing_addrs.add(peer_id_str)
+                self.warnings.append(
+                    {
+                        "message": f"Peerstore missing addrs for peer {peer_id_str} (non-fatal).",
+                        "impact": "Address attribution in report may be incomplete.",
+                        "peer_id": peer_id_str,
+                    }
+                )
+            multiaddr_str = "unknown"
+        else:
+            multiaddr_str = str(multiaddr)
         connection_id = f"{peer_id_str}_{time.time()}"
         
         # Create connection metadata
@@ -441,9 +455,13 @@ class MetadataCollector:
             "connection_history": [conn.to_dict() for conn in self.connection_history],
             "peers": [peer.to_dict() for peer in self.peers.values()],
             "protocol_usage": dict(self.protocol_usage),
+            "warnings": list(self.warnings),
             "connection_times": self.connection_times,
             "disconnection_times": self.disconnection_times,
         }
+
+    def get_warnings(self) -> List[Dict[str, str]]:
+        return list(self.warnings)
     
     def clear(self):
         """Clear all collected metadata."""
@@ -456,4 +474,3 @@ class MetadataCollector:
         self.active_sessions.clear()
         self.total_connections = 0
         self.total_disconnections = 0
-
