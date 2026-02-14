@@ -1,5 +1,5 @@
 """
-Command-Line Interface for libp2p Privacy Analysis Tool
+Command-Line Interface for Privacy Protocol Toolkit for P2P (py-libp2p)
 
 Provides easy-to-use commands for privacy analysis, reporting, and demonstrations.
 """
@@ -44,7 +44,7 @@ from libp2p_privacy_poc.zk_integration import (
 )
 def main(log_level):
     """
-    libp2p Privacy Analysis Tool - Proof of Concept
+    Privacy Protocol Toolkit for P2P (py-libp2p) - Proof of Concept
     
     A privacy analysis tool for py-libp2p that detects privacy leaks and
     demonstrates zero-knowledge proof concepts.
@@ -222,19 +222,21 @@ def analyze(
     Examples:
     
         # Basic real network analysis (10 seconds)
-        libp2p-privacy analyze
+        privacy-protocol-toolkit-p2p analyze
         
         # Analyze for 30 seconds
-        libp2p-privacy analyze --duration 30
+        privacy-protocol-toolkit-p2p analyze --duration 30
         
         # Connect to specific peer
-        libp2p-privacy analyze --connect-to /ip4/127.0.0.1/tcp/4001/p2p/QmPeerID...
+        privacy-protocol-toolkit-p2p analyze --connect-to /ip4/127.0.0.1/tcp/4001/p2p/QmPeerID...
         
         # Generate JSON report
-        libp2p-privacy analyze --format json --output report.json
+        privacy-protocol-toolkit-p2p analyze --format json --output report.json
         
         # Fast simulation (for CI/testing)
-        libp2p-privacy analyze --simulate
+        privacy-protocol-toolkit-p2p analyze --simulate
+
+    Compatibility alias: libp2p-privacy
     """
     import trio
     
@@ -246,7 +248,7 @@ def analyze(
         from libp2p_privacy_poc.utils import get_peer_listening_address
         
         click.echo("\n" + "=" * 70)
-        click.echo(click.style("libp2p Privacy Analysis Tool", fg="cyan", bold=True))
+        click.echo(click.style("Privacy Protocol Toolkit for P2P", fg="cyan", bold=True))
         click.echo("=" * 70)
         click.echo(click.style("\n✓ Using REAL py-libp2p network", fg="green"))
         
@@ -330,7 +332,7 @@ def analyze(
     def _analyze_simulated():
         """Run analysis with simulated data."""
         click.echo("\n" + "=" * 70)
-        click.echo(click.style("libp2p Privacy Analysis Tool", fg="cyan", bold=True))
+        click.echo(click.style("Privacy Protocol Toolkit for P2P", fg="cyan", bold=True))
         click.echo("=" * 70)
         click.echo(click.style("\n⚠️  Using simulated data for demonstration", fg="yellow"))
         
@@ -614,10 +616,12 @@ def demo(verbose):
     Examples:
     
         # Run all demonstrations with real networks
-        libp2p-privacy demo
+        privacy-protocol-toolkit-p2p demo
         
         # Run with verbose output
-        libp2p-privacy demo --verbose
+        privacy-protocol-toolkit-p2p demo --verbose
+
+    Compatibility alias: libp2p-privacy
     
     Note: This command runs the full demo_scenarios.py script which may take 1-2 minutes.
     """
@@ -626,7 +630,7 @@ def demo(verbose):
     
     try:
         click.echo("\n" + "=" * 70)
-        click.echo(click.style("Privacy Analysis Demonstrations", fg="cyan", bold=True))
+        click.echo(click.style("Privacy Protocol Toolkit Demonstrations", fg="cyan", bold=True))
         click.echo("=" * 70)
         click.echo(click.style("\n✓ Running REAL network demonstrations", fg="green"))
         click.echo("This will run all 5 scenarios with real py-libp2p connections.\n")
@@ -666,7 +670,7 @@ def demo(verbose):
 @main.command()
 def version():
     """Show version and disclaimer information."""
-    click.echo("\nlibp2p Privacy Analysis Tool v0.1.0")
+    click.echo("\nPrivacy Protocol Toolkit for P2P (py-libp2p) v0.1.0")
     click.echo("Proof of Concept - Not Production Ready\n")
     print_disclaimer()
 

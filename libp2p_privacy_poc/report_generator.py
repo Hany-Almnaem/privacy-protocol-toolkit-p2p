@@ -329,7 +329,7 @@ class ReportGenerator:
         
         data["metadata"] = {
             "version": "0.1.0",
-            "generator": "libp2p-privacy-poc",
+            "generator": "privacy-protocol-toolkit-p2p",
             "WARNING": "PROOF OF CONCEPT - NOT PRODUCTION READY",
         }
         

@@ -1,62 +1,76 @@
-# libp2p Privacy Analysis Toolkit
-Non-interactive Sigma-protocol ZK proofs for libp2p privacy analysis, with a planned SNARK bridge.
+# Privacy Protocol Toolkit for P2P (py-libp2p)
+Privacy protocol toolkit for P2P (py-libp2p) with real libp2p proof exchange and SNARK verification.
 
-## Summary
-Analyzes privacy risks from py-libp2p connection metadata and can generate real Sigma-protocol proofs for Phase 2A and Phase 2B statements alongside mock proofs for demos.
+## Current State
+- Real libp2p proof exchange protocol is wired on `/privacyzk/1.0.0`.
+- `zk-serve` and `zk-verify` run end-to-end with fixture or real proving modes.
+- `analyze` performs best-effort real proof exchange with explicit fallback.
+- Reports include:
+  - Proof Exchange Summary
+  - Actionable non-fatal warnings
+  - Reproducibility metadata
+- Prototype only; not production hardened.
 
-## Status
-- Phase 2A + 2B complete (Python Sigma proofs)
-- Real proofs are opt-in; mock proofs remain the default in reports
-
-## Features
-- Real or simulated network capture with privacy risk scoring
-- Real ZK proofs (experimental): Pedersen commitment opening + membership/unlinkability/continuity
-- Mock proofs for placeholder statements (range/timing) to support demo workflows
-- Console/JSON/HTML reports with data source labeling (REAL/SIMULATED)
-
-## Usage Example
+## Quick Start
 ```bash
+cd /Users/hanymac/Downloads/libp2p_privacy_poc
 python -m venv venv
 source venv/bin/activate
 pip install -e .
-
-# Simulated analysis with real proofs enabled
-libp2p-privacy analyze --simulate --with-zk-proofs --with-real-zk --with-real-phase2b --format console
-
-# Simulated analysis with SNARK membership verification (experimental)
-libp2p-privacy analyze --simulate --zk-backend snark-membership --format console
-
-# Real network analysis (add a second node to connect)
-libp2p-privacy analyze --duration 10 --with-zk-proofs --with-real-phase2b --format console
 ```
 
-## Notes
-- SNARK membership verification is available (experimental); full SNARK migration is pending.
-- No batching/aggregation beyond sequential verification.
-- No production security claims; prototype only.
-- Range proofs and timing-independence proofs are mock until Phase 2C.
-- Docs: `docs/DOCUMENTATION.md`
+## One-Command Local Demo
+```bash
+bash scripts/demo_local.sh
+```
 
-## Future Work
-- Rust SNARK migration for the 3 existing statements (arkworks/librustzcash + PyO3).
-- Poseidon hash for circuit-friendly hashing and Merkle trees.
-- Add Range Proofs and Timing Independence in Rust.
-- Dual-mode Sigma fallback for demo compatibility.
+Pass criteria:
+- `Demo status: PASS`
+- `membership_v2`, `continuity_v2`, `unlinkability_v2` all show `✓`
+- no fallback message
+
+## Two-Terminal Manual Demo
+Terminal 1:
+```bash
+privacy-protocol-toolkit-p2p --log-level warning zk-serve \
+  --listen-addr /ip4/127.0.0.1/tcp/50140 \
+  --prove-mode real \
+  --assets-dir privacy_circuits/params
+```
+
+Terminal 2:
+```bash
+privacy-protocol-toolkit-p2p --log-level warning analyze \
+  --duration 20 \
+  --listen-addr /ip4/127.0.0.1/tcp/50158 \
+  --connect-to /ip4/127.0.0.1/tcp/50140/p2p/<SERVER_PEER_ID> \
+  --zk-peer /ip4/127.0.0.1/tcp/50140/p2p/<SERVER_PEER_ID> \
+  --zk-statement all \
+  --zk-timeout 120 \
+  --zk-assets-dir privacy_circuits/params
+```
+
+## Release Gate
+```bash
+PYTHONPATH=. pytest -q libp2p_privacy_poc/network/privacyzk/tests -q
+RUN_NETWORK_TESTS=1 PYTHONPATH=. pytest -q -m network -rs
+bash scripts/demo_local.sh
+LATEST_REPORT="$(ls -t demo_reports/report-*.txt | head -n1)"
+grep -n "falling back to legacy simulation" "$LATEST_REPORT" || true
+```
+
+## Main Commands
+- `privacy-protocol-toolkit-p2p analyze`
+- `privacy-protocol-toolkit-p2p zk-serve`
+- `privacy-protocol-toolkit-p2p zk-verify`
+- `privacy-protocol-toolkit-p2p zk-dial`
+
+Compatibility alias:
+- `libp2p-privacy` remains available.
+
+## Notes
+- Canonical defaults and demo portability are documented in `docs/DEMO_CONTRACT.md`.
+- Full doc index is in `docs/DOCUMENTATION.md`.
 
 ## License
 MIT
-
-## Acknowledgments
-Cryptographic Primitives:
-- Pedersen Commitments (Pedersen, 1991)
-- Schnorr Signatures (Schnorr, 1989)
-- Chaum-Pedersen Protocol (Chaum & Pedersen, 1992)
-
-Libraries:
-- petlib (elliptic curve operations)
-- py-libp2p (networking layer)
-
-Inspiration:
-- Zcash (SNARK proving systems)
-- Tornado Cash (privacy-preserving protocols)
-- Semaphore (zero-knowledge group membership)
