@@ -7,6 +7,8 @@ Provides easy-to-use commands for privacy analysis, reporting, and demonstration
 import click
 import json
 import logging
+import platform
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -55,6 +57,38 @@ def main(log_level):
 def _configure_logging(level: str) -> None:
     numeric_level = getattr(logging, level.upper(), logging.WARNING)
     logging.basicConfig(level=numeric_level, force=True)
+
+    class _PeerstoreWarningFilter(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            message = record.getMessage()
+            if "Error getting transport addresses" in message:
+                return False
+            return True
+
+    logging.getLogger().addFilter(_PeerstoreWarningFilter())
+
+
+def _get_git_commit() -> Optional[str]:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip()
+    except Exception:
+        return None
+
+
+def _build_reproducibility(assets_dir: Optional[str]) -> dict:
+    return {
+        "command": " ".join(sys.argv),
+        "git_commit": _get_git_commit(),
+        "python_version": platform.python_version(),
+        "os": platform.platform(),
+        "assets_dir": assets_dir,
+    }
 
 
 @main.command()
@@ -348,6 +382,7 @@ def analyze(
         real_phase2b_proofs = None
         snark_phase2b_proofs = None
         network_snark_proofs = None
+        proof_exchange_summary = None
         if not simulate and not offline:
             try:
                 from libp2p_privacy_poc.network.privacyzk.integration import (
@@ -369,6 +404,7 @@ def analyze(
                     offline=offline,
                     require_real=not zk_allow_fixture,
                 )
+                proof_exchange_summary = exchange.summary
                 if exchange.attempted:
                     network_snark_proofs = exchange.results
                     if exchange.success:
@@ -407,6 +443,7 @@ def analyze(
                         fg="yellow",
                     )
                 )
+                proof_exchange_summary = None
         if with_zk_proofs:
             if verbose:
                 click.echo("\nGenerating mock ZK proofs...")
@@ -497,6 +534,8 @@ def analyze(
         
         report_gen = ReportGenerator()
         data_source = "SIMULATED" if simulate else "REAL"
+        warnings = collector.get_warnings() if collector else []
+        reproducibility = _build_reproducibility(zk_assets_dir)
         
         if format == 'console':
             report_content = report_gen.generate_console_report(
@@ -507,6 +546,9 @@ def analyze(
                 real_phase2b_proofs=real_phase2b_proofs,
                 snark_phase2b_proofs=snark_phase2b_proofs,
                 data_source=data_source,
+                proof_exchange_summary=proof_exchange_summary,
+                warnings=warnings,
+                reproducibility=reproducibility,
             )
             if output:
                 Path(output).write_text(report_content)
@@ -522,6 +564,9 @@ def analyze(
                 real_phase2b_proofs=real_phase2b_proofs,
                 snark_phase2b_proofs=snark_phase2b_proofs,
                 data_source=data_source,
+                proof_exchange_summary=proof_exchange_summary,
+                warnings=warnings,
+                reproducibility=reproducibility,
             )
             output_path = output or "privacy_report.json"
             Path(output_path).write_text(report_content)
@@ -535,6 +580,9 @@ def analyze(
                 real_phase2b_proofs=real_phase2b_proofs,
                 snark_phase2b_proofs=snark_phase2b_proofs,
                 data_source=data_source,
+                proof_exchange_summary=proof_exchange_summary,
+                warnings=warnings,
+                reproducibility=reproducibility,
             )
             output_path = output or "privacy_report.html"
             Path(output_path).write_text(report_content)

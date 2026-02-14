@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import socket
 from pathlib import Path
 
 import pytest
@@ -16,7 +17,6 @@ from libp2p_privacy_poc.network.privacyzk.provider import (
     FixtureProofProvider,
     ProviderConfig,
 )
-PORT_B = 40110
 
 
 def _find_repo_root() -> Path:
@@ -24,6 +24,12 @@ def _find_repo_root() -> Path:
         if (parent / "privacy_circuits").is_dir():
             return parent
     raise RuntimeError("repo root not found")
+
+
+def _pick_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
 
 
 @pytest.mark.network
@@ -47,14 +53,10 @@ async def test_cli_zk_verify_network_smoke() -> None:
     register_privacyzk_protocol(host_b, provider)
 
     async with background_trio_service(host_b.get_network()):
-        try:
-            await host_b.get_network().listen(
-                Multiaddr(f"/ip4/127.0.0.1/tcp/{PORT_B}")
-            )
-        except Exception as exc:
-            pytest.skip(f"listen failed on {PORT_B}: {exc}")
-        await trio.sleep(0.1)
-        addr_b = Multiaddr(f"/ip4/127.0.0.1/tcp/{PORT_B}").encapsulate(
+        port_b = _pick_free_port()
+        await host_b.get_network().listen(Multiaddr(f"/ip4/127.0.0.1/tcp/{port_b}"))
+        await trio.sleep(0.2)
+        addr_b = Multiaddr(f"/ip4/127.0.0.1/tcp/{port_b}").encapsulate(
             Multiaddr(f"/p2p/{host_b.get_id()}")
         )
 
@@ -71,17 +73,11 @@ async def test_cli_zk_verify_network_smoke() -> None:
                     "--assets-dir",
                     str(assets_dir),
                     "--timeout",
-                    "5",
+                    "20",
                 ],
             )
 
         result = await trio.to_thread.run_sync(_run_cli)
 
-    if result.exit_code != 0:
-        err_text = result.output or ""
-        if result.exception is not None:
-            err_text = f"{err_text}\n{result.exception}"
-        if "unable to connect" in err_text or "no addresses" in err_text:
-            pytest.skip(f"dial failed: {err_text.strip()}")
     assert result.exit_code == 0
     assert "PASS" in result.output

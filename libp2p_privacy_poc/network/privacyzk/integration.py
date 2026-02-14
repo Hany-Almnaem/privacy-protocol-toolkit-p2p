@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import secrets
+import time
+import hashlib
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -17,6 +19,7 @@ from .client import request_proof
 from .constants import (
     DEFAULT_MEMBERSHIP_DEPTH,
     MSG_V,
+    PROTOCOL_ID,
     SNARK_SCHEMA_V,
     STATEMENT_TYPES,
 )
@@ -36,6 +39,7 @@ class ProofExchangeResult:
     success: bool
     results: List[Dict[str, Any]]
     fallback_reason: Optional[str]
+    summary: Optional[Dict[str, Any]] = None
 
 
 def try_real_proofs(
@@ -68,6 +72,7 @@ def try_real_proofs(
             False,
             [_error_result(item, peer_id, "unsupported statement") for item in invalid],
             "unsupported statement",
+            summary=_build_summary(peer_addr, normalized, []),
         )
 
     try:
@@ -85,6 +90,7 @@ def try_real_proofs(
             False,
             results,
             "Real ZK proof exchange unavailable; falling back to legacy simulation.",
+            summary=_build_summary(peer_addr, normalized, results),
         )
 
     if require_real:
@@ -101,7 +107,13 @@ def try_real_proofs(
         fallback_reason = (
             "Real ZK proof exchange unavailable; falling back to legacy simulation."
         )
-    return ProofExchangeResult(True, success, results, fallback_reason)
+    return ProofExchangeResult(
+        True,
+        success,
+        results,
+        fallback_reason,
+        summary=_build_summary(peer_addr, normalized, results),
+    )
 
 
 def _exchange(
@@ -172,11 +184,17 @@ async def _exchange_async(
                 "backend": "snark-network",
                 "statement": _STATEMENT_LABELS.get(statement, statement),
                 "peer_id": peer_id_label,
+                "peer_addr": peer_addr,
+                "protocol_id": PROTOCOL_ID,
                 "schema_v": SNARK_SCHEMA_V,
                 "depth": depth,
                 "verified": False,
                 "error": None,
+                "verify_ms": None,
+                "exchange_ms": None,
+                "asset_source": None,
             }
+            exchange_start = time.perf_counter()
             try:
                 with trio.fail_after(timeout):
                     response = await request_proof(
@@ -196,6 +214,12 @@ async def _exchange_async(
                     results.append(result)
                     continue
                 fixture = resolver.resolve_fixture(statement, SNARK_SCHEMA_V, depth)
+                result["asset_source"] = {
+                    "type": "vk",
+                    "path": str(fixture.vk_path),
+                    "sha256": _hash_file(fixture.vk_path),
+                }
+                verify_start = time.perf_counter()
                 verified = SnarkBackend.verify(
                     statement_type=statement,
                     schema_version=SNARK_SCHEMA_V,
@@ -203,11 +227,18 @@ async def _exchange_async(
                     public_inputs=response.public_inputs,
                     proof=response.proof,
                 )
+                result["verify_ms"] = round(
+                    (time.perf_counter() - verify_start) * 1000.0, 3
+                )
                 result["verified"] = bool(verified)
                 if not verified:
                     result["error"] = "verification failed"
             except Exception as exc:
                 result["error"] = str(exc)
+            finally:
+                result["exchange_ms"] = round(
+                    (time.perf_counter() - exchange_start) * 1000.0, 3
+                )
             results.append(result)
 
     await host.close()
@@ -283,8 +314,62 @@ def _error_result(statement: str, peer_id: str, message: str) -> Dict[str, Any]:
         "backend": "snark-network",
         "statement": _STATEMENT_LABELS.get(statement, statement),
         "peer_id": peer_id,
+        "peer_addr": None,
+        "protocol_id": PROTOCOL_ID,
         "schema_v": SNARK_SCHEMA_V,
         "depth": DEFAULT_MEMBERSHIP_DEPTH if statement == "membership" else 0,
         "verified": False,
         "error": message,
+        "verify_ms": None,
+        "exchange_ms": None,
+        "asset_source": None,
+    }
+
+
+def _hash_file(path: Any) -> str:
+    try:
+        data = path.read_bytes()
+    except Exception:
+        return ""
+    return hashlib.sha256(data).hexdigest()
+
+
+def _build_summary(
+    peer_addr: Optional[str],
+    statements: Iterable[str],
+    results: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    summary_items = []
+    for item in results:
+        summary_items.append(
+            {
+                "statement": item.get("statement"),
+                "schema_v": item.get("schema_v"),
+                "depth": item.get("depth"),
+                "prove_mode": item.get("prove_mode"),
+                "verified": item.get("verified"),
+                "verify_ms": item.get("verify_ms"),
+                "exchange_ms": item.get("exchange_ms"),
+                "asset_source": item.get("asset_source"),
+            }
+        )
+    if not summary_items:
+        for statement in statements:
+            depth = DEFAULT_MEMBERSHIP_DEPTH if statement == "membership" else 0
+            summary_items.append(
+                {
+                    "statement": _STATEMENT_LABELS.get(statement, statement),
+                    "schema_v": SNARK_SCHEMA_V,
+                    "depth": depth,
+                    "prove_mode": None,
+                    "verified": None,
+                    "verify_ms": None,
+                    "exchange_ms": None,
+                    "asset_source": None,
+                }
+            )
+    return {
+        "protocol_id": PROTOCOL_ID,
+        "peer_multiaddr": peer_addr,
+        "statements": summary_items,
     }

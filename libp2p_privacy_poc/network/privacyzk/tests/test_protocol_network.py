@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import socket
 
 import pytest
 import trio
@@ -20,8 +21,12 @@ from libp2p_privacy_poc.network.privacyzk.provider import (
     FixtureProofProvider,
     ProviderConfig,
 )
-PORT_A = 40100
-PORT_B = 40101
+
+
+def _pick_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
 
 
 @pytest.mark.network
@@ -48,20 +53,19 @@ async def test_protocol_network_roundtrip(tmp_path) -> None:
 
     async with background_trio_service(host_a.get_network()):
         async with background_trio_service(host_b.get_network()):
-            try:
-                await host_a.get_network().listen(Multiaddr(f"/ip4/127.0.0.1/tcp/{PORT_A}"))
-                await host_b.get_network().listen(Multiaddr(f"/ip4/127.0.0.1/tcp/{PORT_B}"))
-            except Exception as exc:
-                pytest.skip(f"listen failed: {exc}")
-            await trio.sleep(0.1)
+            port_a = _pick_free_port()
+            port_b = _pick_free_port()
+            await host_a.get_network().listen(Multiaddr(f"/ip4/127.0.0.1/tcp/{port_a}"))
+            await host_b.get_network().listen(Multiaddr(f"/ip4/127.0.0.1/tcp/{port_b}"))
+            await trio.sleep(0.2)
 
-            addr_b = Multiaddr(f"/ip4/127.0.0.1/tcp/{PORT_B}").encapsulate(
+            addr_b = Multiaddr(f"/ip4/127.0.0.1/tcp/{port_b}").encapsulate(
                 Multiaddr(f"/p2p/{host_b.get_id()}")
             )
             peer_info = info_from_p2p_addr(addr_b)
             connected = False
             last_exc: Exception | None = None
-            for _ in range(5):
+            for _ in range(10):
                 try:
                     await host_a.connect(peer_info)
                     connected = True
@@ -70,7 +74,7 @@ async def test_protocol_network_roundtrip(tmp_path) -> None:
                     last_exc = exc
                     await trio.sleep(0.2)
             if not connected:
-                pytest.skip(f"connect failed: {last_exc}")
+                pytest.fail(f"connect failed: {last_exc}")
 
             req = ProofRequest(
                 msg_v=MSG_V,

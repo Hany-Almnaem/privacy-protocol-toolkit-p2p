@@ -40,6 +40,9 @@ class ReportGenerator:
         real_phase2b_proofs: Optional[List[Dict[str, Any]]] = None,
         snark_phase2b_proofs: Optional[List[Dict[str, Any]]] = None,
         data_source: Optional[str] = None,
+        proof_exchange_summary: Optional[Dict[str, Any]] = None,
+        warnings: Optional[List[Dict[str, Any]]] = None,
+        reproducibility: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Generate a console-friendly report.
@@ -64,6 +67,37 @@ class ReportGenerator:
         if data_source:
             lines.append(f"Data Source: {data_source}")
         lines.append("")
+
+        if proof_exchange_summary:
+            lines.append("-" * 80)
+            lines.append(color_text("PROOF EXCHANGE SUMMARY", "cyan"))
+            lines.append("-" * 80)
+            lines.append(f"Protocol ID: {proof_exchange_summary.get('protocol_id', 'unknown')}")
+            peer_addr = proof_exchange_summary.get("peer_multiaddr") or "unknown"
+            lines.append(f"Peer Multiaddr: {peer_addr}")
+            statements = proof_exchange_summary.get("statements", [])
+            for item in statements:
+                statement = item.get("statement", "unknown")
+                schema_v = item.get("schema_v", "unknown")
+                depth = item.get("depth", "unknown")
+                mode = item.get("prove_mode") or "unknown"
+                verified = item.get("verified")
+                verify_ms = item.get("verify_ms")
+                exchange_ms = item.get("exchange_ms")
+                asset = item.get("asset_source") or {}
+                asset_hash = asset.get("sha256", "")
+                asset_label = f"{asset_hash[:12]}…" if asset_hash else "unknown"
+                status = color_text("✓", "green") if verified else color_text("✗", "red")
+                lines.append(
+                    f"  - {statement}: {status} (schema v{schema_v}, depth {depth})"
+                )
+                lines.append(f"    Mode: {mode}")
+                if verify_ms is not None:
+                    lines.append(f"    Verify Time: {verify_ms} ms")
+                if exchange_ms is not None:
+                    lines.append(f"    Exchange Time: {exchange_ms} ms")
+                lines.append(f"    Asset Hash: {asset_label}")
+            lines.append("")
         
         # Overall risk score
         risk_color = self._get_risk_color(report.overall_risk_score)
@@ -78,6 +112,18 @@ class ReportGenerator:
         for key, value in report.statistics.items():
             lines.append(f"  {key.replace('_', ' ').title()}: {value}")
         lines.append("")
+
+        if warnings:
+            lines.append("-" * 80)
+            lines.append(color_text("WARNINGS", "cyan"))
+            lines.append("-" * 80)
+            for warning in warnings:
+                message = warning.get("message", "unknown warning")
+                impact = warning.get("impact")
+                lines.append(f"  - {message}")
+                if impact:
+                    lines.append(f"    Impact: {impact}")
+            lines.append("")
         
         # Risks summary
         lines.append("-" * 80)
@@ -207,6 +253,16 @@ class ReportGenerator:
         
         # Footer
         lines.append("")
+        if reproducibility:
+            lines.append("-" * 80)
+            lines.append(color_text("REPRODUCIBILITY", "cyan"))
+            lines.append("-" * 80)
+            lines.append(f"Command: {reproducibility.get('command', 'unknown')}")
+            lines.append(f"Git Commit: {reproducibility.get('git_commit', 'unknown')}")
+            lines.append(f"Python: {reproducibility.get('python_version', 'unknown')}")
+            lines.append(f"OS: {reproducibility.get('os', 'unknown')}")
+            lines.append(f"Assets Dir: {reproducibility.get('assets_dir', 'unknown')}")
+            lines.append("")
         lines.append("=" * 80)
         lines.append(color_text("END OF REPORT", "cyan"))
         lines.append("=" * 80)
@@ -223,6 +279,9 @@ class ReportGenerator:
         real_phase2b_proofs: Optional[List[Dict[str, Any]]] = None,
         snark_phase2b_proofs: Optional[List[Dict[str, Any]]] = None,
         data_source: Optional[str] = None,
+        proof_exchange_summary: Optional[Dict[str, Any]] = None,
+        warnings: Optional[List[Dict[str, Any]]] = None,
+        reproducibility: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Generate a JSON report.
@@ -257,6 +316,13 @@ class ReportGenerator:
 
         if snark_phase2b_proofs:
             data["snark_phase2b_proofs"] = snark_phase2b_proofs
+
+        if proof_exchange_summary:
+            data["proof_exchange_summary"] = proof_exchange_summary
+        if warnings:
+            data["warnings"] = warnings
+        if reproducibility:
+            data["reproducibility"] = reproducibility
         
         if certificate:
             data["privacy_certificate"] = certificate
@@ -277,6 +343,9 @@ class ReportGenerator:
         real_phase2b_proofs: Optional[List[Dict[str, Any]]] = None,
         snark_phase2b_proofs: Optional[List[Dict[str, Any]]] = None,
         data_source: Optional[str] = None,
+        proof_exchange_summary: Optional[Dict[str, Any]] = None,
+        warnings: Optional[List[Dict[str, Any]]] = None,
+        reproducibility: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Generate an HTML report.
@@ -392,6 +461,8 @@ class ReportGenerator:
             <strong>⚠️ PROOF OF CONCEPT</strong><br>
             This report is generated by a proof-of-concept tool. ZK proofs are mock implementations for demonstration only.
         </div>
+
+        {self._generate_proof_exchange_summary_html(proof_exchange_summary)}
         
         <h2>Overall Risk Assessment</h2>
         <div class="risk-score {self._get_risk_class(report.overall_risk_score)}">
@@ -403,6 +474,8 @@ class ReportGenerator:
         <div class="stats">
             {self._generate_stat_cards(report.statistics)}
         </div>
+
+        {self._generate_warnings_html(warnings)}
         
         <h2>Privacy Risks ({len(report.risks)})</h2>
         {self._generate_risk_items_html(report.risks)}
@@ -410,6 +483,8 @@ class ReportGenerator:
         {self._generate_zk_proofs_html(zk_proofs) if zk_proofs else ''}
         
         {self._generate_real_zk_proof_html(real_zk_proof, real_phase2b_proofs, snark_phase2b_proofs)}
+
+        {self._generate_reproducibility_html(reproducibility)}
         
         <h2>Recommendations</h2>
         <ol>
@@ -472,6 +547,83 @@ class ReportGenerator:
             </div>
             """)
         return "\n".join(items)
+
+    def _generate_proof_exchange_summary_html(
+        self, summary: Optional[Dict[str, Any]]
+    ) -> str:
+        if not summary:
+            return ""
+        rows = []
+        for item in summary.get("statements", []):
+            statement = item.get("statement", "unknown")
+            schema_v = item.get("schema_v", "unknown")
+            depth = item.get("depth", "unknown")
+            mode = item.get("prove_mode") or "unknown"
+            verified = "✓" if item.get("verified") else "✗"
+            verify_ms = item.get("verify_ms")
+            exchange_ms = item.get("exchange_ms")
+            asset = item.get("asset_source") or {}
+            asset_hash = asset.get("sha256", "")
+            asset_label = f"{asset_hash[:12]}…" if asset_hash else "unknown"
+            rows.append(
+                f"<tr><td>{statement}</td><td>v{schema_v}</td><td>{depth}</td>"
+                f"<td>{mode}</td><td>{verified}</td>"
+                f"<td>{verify_ms if verify_ms is not None else '-'}</td>"
+                f"<td>{exchange_ms if exchange_ms is not None else '-'}</td>"
+                f"<td>{asset_label}</td></tr>"
+            )
+        protocol_id = summary.get("protocol_id", "unknown")
+        peer_addr = summary.get("peer_multiaddr") or "unknown"
+        return f"""
+        <h2>Proof Exchange Summary</h2>
+        <p><strong>Protocol ID:</strong> {protocol_id}</p>
+        <p><strong>Peer Multiaddr:</strong> {peer_addr}</p>
+        <table style="width:100%; border-collapse: collapse;">
+            <thead>
+                <tr>
+                    <th>Statement</th><th>Schema</th><th>Depth</th><th>Mode</th>
+                    <th>Status</th><th>Verify ms</th><th>Exchange ms</th><th>Asset Hash</th>
+                </tr>
+            </thead>
+            <tbody>
+                {''.join(rows)}
+            </tbody>
+        </table>
+        """
+
+    def _generate_warnings_html(self, warnings: Optional[List[Dict[str, Any]]]) -> str:
+        if not warnings:
+            return ""
+        items = []
+        for warning in warnings:
+            message = warning.get("message", "unknown warning")
+            impact = warning.get("impact")
+            if impact:
+                items.append(f"<li>{message}<br><em>Impact:</em> {impact}</li>")
+            else:
+                items.append(f"<li>{message}</li>")
+        return f"""
+        <h2>Warnings</h2>
+        <ul>
+            {''.join(items)}
+        </ul>
+        """
+
+    def _generate_reproducibility_html(
+        self, reproducibility: Optional[Dict[str, Any]]
+    ) -> str:
+        if not reproducibility:
+            return ""
+        return f"""
+        <h2>Reproducibility</h2>
+        <ul>
+            <li><strong>Command:</strong> {reproducibility.get('command', 'unknown')}</li>
+            <li><strong>Git Commit:</strong> {reproducibility.get('git_commit', 'unknown')}</li>
+            <li><strong>Python:</strong> {reproducibility.get('python_version', 'unknown')}</li>
+            <li><strong>OS:</strong> {reproducibility.get('os', 'unknown')}</li>
+            <li><strong>Assets Dir:</strong> {reproducibility.get('assets_dir', 'unknown')}</li>
+        </ul>
+        """
     
     def _generate_zk_proofs_html(self, zk_proofs: Dict[str, List[MockZKProof]]) -> str:
         """Generate HTML for ZK proofs section."""

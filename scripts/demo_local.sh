@@ -26,7 +26,7 @@ trap cleanup EXIT
 echo "Starting zk-serve..."
 exec > >(tee "$REPORT_FILE") 2>&1
 
-$VENV_PY -m libp2p_privacy_poc.cli --log-level "$LOG_LEVEL" zk-serve \
+PYTHONUNBUFFERED=1 "$VENV_PY" -m libp2p_privacy_poc.cli --log-level "$LOG_LEVEL" zk-serve \
   --listen-addr "$SERVER_LISTEN" \
   --prove-mode real \
   --assets-dir "$ASSETS_DIR" >"$LOG_FILE" 2>&1 &
@@ -34,15 +34,17 @@ SERVER_PID=$!
 
 SERVER_PEER_ID=""
 extract_peer_id() {
-  if command -v rg >/dev/null 2>&1; then
-    rg -o 'Peer ID: (\\S+)' "$LOG_FILE" | awk '{print $3}' | tail -n1
-  else
-    grep -E 'Peer ID:' "$LOG_FILE" | awk '{print $3}' | tail -n1
-  fi
+  awk '/^Peer ID: /{print $3}' "$LOG_FILE" | tail -n1
 }
-for _ in $(seq 1 50); do
+extract_peer_id_from_listening() {
+  awk -F"/p2p/" '/^Listening: /{print $2}' "$LOG_FILE" | tail -n1
+}
+for _ in $(seq 1 150); do
   if [[ -f "$LOG_FILE" ]]; then
     SERVER_PEER_ID="$(extract_peer_id || true)"
+    if [[ -z "$SERVER_PEER_ID" ]]; then
+      SERVER_PEER_ID="$(extract_peer_id_from_listening || true)"
+    fi
   fi
   if [[ -n "$SERVER_PEER_ID" ]]; then
     break
@@ -52,6 +54,8 @@ done
 
 if [[ -z "$SERVER_PEER_ID" ]]; then
   echo "Error: failed to read server peer id from $LOG_FILE"
+  echo "--- zk-serve.log tail ---"
+  tail -n 40 "$LOG_FILE" || true
   exit 1
 fi
 
@@ -66,7 +70,32 @@ $VENV_PY -m libp2p_privacy_poc.cli --log-level "$LOG_LEVEL" analyze \
   --connect-to "$SERVER_MULTIADDR" \
   --zk-peer "$SERVER_MULTIADDR" \
   --zk-statement all \
-  --zk-timeout "$ZK_TIMEOUT"
+  --zk-timeout "$ZK_TIMEOUT" \
+  --zk-assets-dir "$ASSETS_DIR"
+
+echo
+echo "Validating proof statements..."
+all_ok=1
+for statement in membership_v2 continuity_v2 unlinkability_v2; do
+  if grep -F "  - ${statement}: " "$REPORT_FILE" | tail -n1 | grep -q "✓"; then
+    echo "  [PASS] ${statement}"
+  else
+    echo "  [FAIL] ${statement}"
+    all_ok=0
+  fi
+done
+
+if grep -Fq "falling back to legacy simulation" "$REPORT_FILE"; then
+  echo "  [FAIL] fallback detected"
+  all_ok=0
+fi
+
+if [[ "$all_ok" -eq 1 ]]; then
+  echo "Demo status: PASS"
+else
+  echo "Demo status: FAIL"
+  exit 1
+fi
 
 echo
 echo "Demo complete."
