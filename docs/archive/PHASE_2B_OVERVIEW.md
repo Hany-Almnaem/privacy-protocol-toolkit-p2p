@@ -277,23 +277,23 @@ assert backend.verify_continuity_proof(proof)
 Commands to run statement-specific tests:
 
 ```bash
-PYTHONPATH=/Users/hanymac/Downloads/libp2p_privacy_poc \
+PYTHONPATH=<repo-root> \
 ./venv/bin/python -m pytest libp2p_privacy_poc/privacy_protocol/pedersen/tests/test_membership.py -v
 ```
 
 ```bash
-PYTHONPATH=/Users/hanymac/Downloads/libp2p_privacy_poc \
+PYTHONPATH=<repo-root> \
 ./venv/bin/python -m pytest libp2p_privacy_poc/privacy_protocol/pedersen/tests/test_unlinkability.py -v
 ```
 
 ```bash
-PYTHONPATH=/Users/hanymac/Downloads/libp2p_privacy_poc \
+PYTHONPATH=<repo-root> \
 ./venv/bin/python -m pytest libp2p_privacy_poc/privacy_protocol/pedersen/tests/test_continuity.py -v
 ```
 
 Integration coverage (all three statements):
 ```bash
-PYTHONPATH=/Users/hanymac/Downloads/libp2p_privacy_poc \
+PYTHONPATH=<repo-root> \
 ./venv/bin/python -m pytest libp2p_privacy_poc/privacy_protocol/pedersen/tests/test_integration_phase2b.py -v
 ```
 

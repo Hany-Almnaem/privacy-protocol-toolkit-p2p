@@ -5,9 +5,9 @@ This repository is a prototype privacy protocol toolkit with real libp2p proof
 exchange and SNARK verification paths. It is not production-ready.
 
 ## Active Docs
-- Project quick start and commands: `/Users/hanymac/Downloads/libp2p_privacy_poc/README.md`
-- Canonical demo defaults and portability contract: `/Users/hanymac/Downloads/libp2p_privacy_poc/docs/DEMO_CONTRACT.md`
-- One-command local demo harness: `/Users/hanymac/Downloads/libp2p_privacy_poc/scripts/demo_local.sh`
+- Project quick start and commands: `<repo-root>/README.md`
+- Canonical demo defaults and portability contract: `<repo-root>/docs/DEMO_CONTRACT.md`
+- One-command local demo harness: `<repo-root>/scripts/demo_local.sh`
 
 ## Runtime Surfaces
 - `privacy-protocol-toolkit-p2p analyze`: privacy analysis + best-effort real proof exchange.
@@ -32,7 +32,7 @@ bash scripts/demo_local.sh
 
 ## Archive Policy
 Phase-by-phase planning/progress notes are archived under:
-- `/Users/hanymac/Downloads/libp2p_privacy_poc/docs/archive/`
+- `<repo-root>/docs/archive/`
 
 They are retained for historical context and should not be treated as current
 operator documentation.

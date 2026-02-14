@@ -13,7 +13,7 @@ Privacy protocol toolkit for P2P (py-libp2p) with real libp2p proof exchange and
 
 ## Quick Start
 ```bash
-cd /Users/hanymac/Downloads/libp2p_privacy_poc
+cd <repo-root>
 python -m venv venv
 source venv/bin/activate
 pip install -e .
